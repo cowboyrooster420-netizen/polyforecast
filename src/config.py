@@ -23,8 +23,13 @@ class Settings:
     # Claude model
     claude_model: str = "claude-sonnet-4-5-20250929"
 
-    # Database
-    db_path: str = str(Path(__file__).resolve().parent.parent / "polyforecast.db")
+    # Database — use RAILWAY_VOLUME_MOUNT_PATH if available for persistence
+    db_path: str = str(
+        Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", ""))
+        / "polyforecast.db"
+        if os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
+        else Path(__file__).resolve().parent.parent / "polyforecast.db"
+    )
 
     # Rate limits
     anthropic_rpm: int = 30
