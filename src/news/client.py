@@ -51,6 +51,18 @@ RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
         ("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
         ("Reuters World", "https://feeds.reuters.com/Reuters/worldNews"),
     ],
+    "frontline": [
+        # ISW daily assessments — the gold standard for frontline analysis
+        ("ISW", "https://www.understandingwar.org/rss.xml"),
+        # Telegram channels via RSSHub — granular frontline updates
+        ("DeepState UA", "https://rsshub.app/telegram/channel/DeepStateUA"),
+        ("Rybar", "https://rsshub.app/telegram/channel/ryaborig"),
+        ("Ukraine NOW", "https://rsshub.app/telegram/channel/ukrainenowenglish"),
+        ("Militaryland", "https://rsshub.app/telegram/channel/militaborlandnet"),
+        ("WarMonitor", "https://rsshub.app/telegram/channel/WarMonitor3"),
+        # Dedicated conflict tracking sites
+        ("Liveuamap", "https://liveuamap.com/rss"),
+    ],
 }
 
 
@@ -282,6 +294,7 @@ class NewsClient:
             "finance": {"stock", "market", "fed", "inflation", "gdp", "economy", "gold", "oil", "rate", "treasury"},
             "science": {"ai", "tech", "space", "climate", "science", "model", "chip", "gpu", "openai"},
             "geopolitics": {"war", "ukraine", "russia", "ceasefire", "nato", "military", "conflict", "invasion", "troops", "weapons", "sanctions", "crimea", "zelensky", "putin", "peace", "missile", "drone", "frontline", "china", "taiwan", "iran", "israel", "gaza", "hamas", "hezbollah", "syria", "nuclear", "treaty"},
+            "frontline": {"capture", "captured", "frontline", "advance", "offensive", "assault", "battalion", "brigade", "regiment", "oblast", "zaporizhzhia", "donetsk", "luhansk", "kherson", "bakhmut", "avdiivka", "huliaipole", "tokmak", "robotyne", "kupyansk", "chasiv", "pokrovsk", "vuhledar", "marinka", "isw", "deepstate", "counterattack", "defense", "fortification", "trench", "artillery", "position"},
         }.items():
             if keywords & cat_keywords:
                 categories_to_check.append(category)
@@ -313,9 +326,12 @@ class NewsClient:
     async def _fetch_single_rss(self, source_name: str, feed_url: str) -> list[Article]:
         """Fetch and parse a single RSS feed."""
         try:
+            # Telegram/frontline feeds get more entries for better coverage
+            is_telegram = "rsshub.app/telegram" in feed_url
+            limit = 15 if is_telegram else 5
             resp = await self._http.get(feed_url)
             resp.raise_for_status()
-            return self._parse_rss_feed(resp.text, source_name)[:5]
+            return self._parse_rss_feed(resp.text, source_name)[:limit]
         except Exception:
             return []
 
@@ -324,7 +340,7 @@ class NewsClient:
         """Parse RSS/Atom feed text into Article objects."""
         feed = feedparser.parse(text)
         articles: list[Article] = []
-        for entry in feed.entries[:10]:
+        for entry in feed.entries[:20]:
             published = None
             if hasattr(entry, "published_parsed") and entry.published_parsed:
                 try:
