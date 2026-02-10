@@ -13,8 +13,8 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 class Settings:
     anthropic_api_key: str = field(repr=False)
     newsapi_key: str = field(repr=False)
-    guardian_api_key: str = field(repr=False, default="")
     telegram_bot_token: str = field(repr=False)
+    guardian_api_key: str = field(repr=False, default="")
     telegram_authorized_users: list[int] = field(default_factory=list)
 
     # Polymarket endpoints
