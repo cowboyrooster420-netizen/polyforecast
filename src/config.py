@@ -13,6 +13,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 class Settings:
     anthropic_api_key: str = field(repr=False)
     newsapi_key: str = field(repr=False)
+    guardian_api_key: str = field(repr=False, default="")
     telegram_bot_token: str = field(repr=False)
     telegram_authorized_users: list[int] = field(default_factory=list)
 
@@ -51,6 +52,7 @@ class Settings:
         return cls(
             anthropic_api_key=os.environ["ANTHROPIC_API_KEY"],
             newsapi_key=os.environ.get("NEWSAPI_KEY", ""),
+            guardian_api_key=os.environ.get("GUARDIAN_API_KEY", ""),
             telegram_bot_token=os.environ["TELEGRAM_BOT_TOKEN"],
             telegram_authorized_users=auth_users,
         )
