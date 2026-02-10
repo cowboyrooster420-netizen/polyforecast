@@ -70,7 +70,7 @@ class NewsClient:
     async def fetch_articles_for_market(
         self,
         question: str,
-        max_articles: int = 15,
+        max_articles: int = 25,
     ) -> list[Article]:
         """Fetch relevant news from all sources in parallel."""
         queries = extract_search_queries(question)
@@ -82,6 +82,7 @@ class NewsClient:
             self._search_newsapi(primary_query),
             self._search_guardian(primary_query),
             self._search_google_rss(primary_query),
+            self._search_gdelt(primary_query),
             self._search_rss_feeds(primary_query),
             return_exceptions=True,
         )
@@ -125,7 +126,7 @@ class NewsClient:
         if not self._newsapi:
             return []
         try:
-            from_date = (datetime.now(tz=timezone.utc) - timedelta(days=7)).strftime(
+            from_date = (datetime.now(tz=timezone.utc) - timedelta(days=30)).strftime(
                 "%Y-%m-%d"
             )
             newsapi = self._newsapi
@@ -210,15 +211,60 @@ class NewsClient:
     # ── Google News RSS ──────────────────────────────────────
 
     async def _search_google_rss(self, query: str) -> list[Article]:
-        """Google News RSS search."""
+        """Google News RSS search with 30-day lookback."""
         try:
-            encoded_query = httpx.URL("", params={"q": query}).params["q"]
+            after_date = (datetime.now(tz=timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+            full_query = f"{query} after:{after_date}"
+            encoded_query = httpx.URL("", params={"q": full_query}).params["q"]
             url = f"https://news.google.com/rss/search?q={encoded_query}&hl=en-US&gl=US&ceid=US:en"
             resp = await self._http.get(url)
             resp.raise_for_status()
             return self._parse_rss_feed(resp.text, "Google News")
         except Exception as exc:
             logger.warning("Google News RSS error: %s", exc)
+            return []
+
+    # ── GDELT (Global Database of Events, Language, and Tone) ─
+
+    async def _search_gdelt(self, query: str) -> list[Article]:
+        """Search GDELT for historical news coverage. Free, no API key, searches back months."""
+        try:
+            resp = await self._http.get(
+                "https://api.gdeltproject.org/api/v2/doc/doc",
+                params={
+                    "query": f"{query} sourcelang:eng",
+                    "mode": "artlist",
+                    "maxrecords": 15,
+                    "format": "json",
+                    "sort": "hybridrel",  # relevance + recency blend
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            articles: list[Article] = []
+            for item in data.get("articles", []):
+                published = None
+                if item.get("seendate"):
+                    try:
+                        # GDELT format: "20250210T143000Z"
+                        published = datetime.strptime(
+                            item["seendate"], "%Y%m%dT%H%M%SZ"
+                        ).replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pass
+                articles.append(
+                    Article(
+                        title=item.get("title", ""),
+                        source=item.get("domain", "GDELT"),
+                        url=item.get("url", ""),
+                        published_at=published,
+                        description=item.get("title", ""),
+                    )
+                )
+            logger.info("GDELT: found %d articles for: %s", len(articles), query[:40])
+            return articles
+        except Exception as exc:
+            logger.warning("GDELT API error: %s", exc)
             return []
 
     # ── Curated RSS feeds ────────────────────────────────────
