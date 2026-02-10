@@ -44,6 +44,13 @@ RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
         ("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index"),
         ("TechCrunch", "https://techcrunch.com/feed/"),
     ],
+    "geopolitics": [
+        ("Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
+        ("Kyiv Independent", "https://kyivindependent.com/feed/"),
+        ("Defense One", "https://www.defenseone.com/rss/"),
+        ("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
+        ("Reuters World", "https://feeds.reuters.com/Reuters/worldNews"),
+    ],
 }
 
 
@@ -228,6 +235,7 @@ class NewsClient:
             "crypto": {"crypto", "bitcoin", "btc", "ethereum", "eth", "solana", "defi", "token", "blockchain"},
             "finance": {"stock", "market", "fed", "inflation", "gdp", "economy", "gold", "oil", "rate", "treasury"},
             "science": {"ai", "tech", "space", "climate", "science", "model", "chip", "gpu", "openai"},
+            "geopolitics": {"war", "ukraine", "russia", "ceasefire", "nato", "military", "conflict", "invasion", "troops", "weapons", "sanctions", "crimea", "zelensky", "putin", "peace", "missile", "drone", "frontline", "china", "taiwan", "iran", "israel", "gaza", "hamas", "hezbollah", "syria", "nuclear", "treaty"},
         }.items():
             if keywords & cat_keywords:
                 categories_to_check.append(category)
