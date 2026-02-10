@@ -46,34 +46,56 @@ def format_market_list(markets: list[Market]) -> str:
 def format_forecast(result: ForecastResult) -> str:
     """Format a full forecast analysis for Telegram (HTML)."""
     lines: list[str] = [
-        f"<b>Analysis: {_escape(result.question)}</b>\n",
+        f"<b>{_escape(result.question)}</b>",
     ]
 
-    # Outcome table
+    if result.slug:
+        lines.append(f"https://polymarket.com/event/{result.slug}")
+
+    lines.append("")
+
+    # ── Outcome comparison table ──
+    lines.append("<b>PROBABILITY COMPARISON</b>")
+    lines.append("<pre>")
+    lines.append(f"{'Outcome':<12} {'Bot':>7} {'Market':>7} {'Edge':>7}")
+    lines.append("-" * 36)
+    for of in result.outcomes:
+        edge = of.bot_probability - of.market_probability
+        lines.append(
+            f"{of.outcome:<12} {of.bot_probability:>6.1%} {of.market_probability:>6.1%} {edge:>+6.1%}"
+        )
+    lines.append("</pre>")
+
+    # ── EV & Recommendation ──
+    lines.append("\n<b>RECOMMENDATIONS</b>")
     for of in result.outcomes:
         rec_tag = _REC_EMOJI.get(of.recommendation, "")
         lines.append(
-            f"  <b>{_escape(of.outcome)}</b>\n"
-            f"    Bot: {of.bot_probability:.1%}  |  Market: {of.market_probability:.1%}\n"
-            f"    EV/dollar: {of.ev_per_dollar:+.2%}  |  Kelly: {of.kelly_fraction:.1%}\n"
-            f"    Rec: <b>{of.recommendation.value}</b> {rec_tag}"
+            f"  <b>{_escape(of.outcome)}</b>: {of.recommendation.value} {rec_tag}\n"
+            f"    EV per dollar: {of.ev_per_dollar:+.2%}\n"
+            f"    Kelly fraction: {of.kelly_fraction:.1%}"
         )
 
     best = result.best_opportunity
     if best and best.ev_per_dollar > 0:
         lines.append(
-            f"\nBest opportunity: <b>{_escape(best.outcome)}</b> "
-            f"(EV {best.ev_per_dollar:+.2%})"
+            f"\n<b>Best opportunity: {_escape(best.outcome)}</b> "
+            f"(EV {best.ev_per_dollar:+.2%}, Kelly {best.kelly_fraction:.1%})"
         )
+    else:
+        lines.append("\nNo +EV opportunity found — market appears fairly priced.")
 
-    # Truncated reasoning
-    reasoning_preview = result.reasoning[:1500]
-    if len(result.reasoning) > 1500:
-        reasoning_preview += "..."
-    lines.append(f"\n<b>Reasoning:</b>\n<i>{_escape(reasoning_preview)}</i>")
+    # ── Full reasoning ──
+    lines.append("\n<b>ANALYSIS</b>")
+    # Send up to 3500 chars of reasoning (Telegram max is 4096 per message,
+    # but we use _send_long_message to split if needed)
+    reasoning_preview = result.reasoning[:3500]
+    if len(result.reasoning) > 3500:
+        reasoning_preview += "\n[... truncated]"
+    lines.append(f"<i>{_escape(reasoning_preview)}</i>")
 
-    lines.append(f"\nNews articles used: {result.news_article_count}")
-    lines.append(f"Prompt version: {result.prompt_version}")
+    # ── Footer ──
+    lines.append(f"\nNews sources used: {result.news_article_count}")
 
     return "\n".join(lines)
 

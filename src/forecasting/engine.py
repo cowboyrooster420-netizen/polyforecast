@@ -72,7 +72,9 @@ class ForecastingEngine:
     async def analyze_market(self, market: Market) -> ForecastResult:
         """Full pipeline: fetch news → prompt Claude → parse → compute EV."""
         # 1. Fetch news articles
+        logger.info("Step 1: Fetching news for: %s", market.question[:60])
         articles = await self._news.fetch_articles_for_market(market.question)
+        logger.info("Step 1 done: got %d articles", len(articles))
         articles_text = _format_articles(articles)
 
         # 2. Build prompt — intentionally exclude market prices to avoid anchoring
@@ -93,13 +95,16 @@ class ForecastingEngine:
 
         # 3. Call Claude
         await self._rate_limiter.acquire()
+        logger.info("Calling Claude for: %s", market.question[:60])
         response = await self._anthropic.messages.create(
             model=self._settings.claude_model,
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
+            timeout=120.0,
         )
         reasoning = response.content[0].text
+        logger.info("Claude responded (%d chars)", len(reasoning))
 
         # 4. Parse probabilities from response
         probs = _parse_probabilities(reasoning, outcomes)

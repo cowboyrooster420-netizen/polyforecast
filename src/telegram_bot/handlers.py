@@ -37,6 +37,8 @@ def _authorized(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
+    if update.effective_user:
+        logger.info("User ID: %s  Name: %s", update.effective_user.id, update.effective_user.first_name)
     await update.message.reply_text(
         "<b>Welcome to Polyforecast!</b>\n\n"
         "I'm a superforecasting assistant for Polymarket.\n\n"
@@ -140,7 +142,8 @@ async def analyze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         text = format_forecast(result)
     except Exception as exc:
         logger.error("Analysis failed: %s", exc, exc_info=True)
-        text = f"Analysis failed: {exc}"
+        await update.message.reply_text(f"Analysis failed: {exc}")
+        return
 
     await _send_long_message(update, text)
 

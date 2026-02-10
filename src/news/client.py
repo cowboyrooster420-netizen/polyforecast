@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 class NewsClient:
     def __init__(self, settings: Settings) -> None:
         self._newsapi: NewsApiClient | None = None
-        if settings.newsapi_key:
+        # Skip placeholder values like "..."
+        if settings.newsapi_key and len(settings.newsapi_key) > 10:
             self._newsapi = NewsApiClient(api_key=settings.newsapi_key)
         self._http = httpx.AsyncClient(timeout=15.0)
 
@@ -35,10 +37,13 @@ class NewsClient:
         articles: list[Article] = []
         seen_urls: set[str] = set()
 
-        for query in queries:
+        logger.info("News: searching %d queries", len(queries))
+        for i, query in enumerate(queries):
             if len(articles) >= max_articles:
                 break
+            logger.info("News: query %d/%d: %s", i + 1, len(queries), query[:50])
             batch = await self._search(query)
+            logger.info("News: query %d returned %d articles", i + 1, len(batch))
             for art in batch:
                 if art.url not in seen_urls:
                     seen_urls.add(art.url)
@@ -60,14 +65,16 @@ class NewsClient:
         return articles
 
     async def _search_newsapi(self, query: str) -> list[Article]:
-        """Search using NewsAPI (sync SDK, but fast enough for our use)."""
+        """Search using NewsAPI (sync SDK wrapped in thread to avoid blocking)."""
         if not self._newsapi:
             return []
         try:
             from_date = (datetime.now(tz=timezone.utc) - timedelta(days=7)).strftime(
                 "%Y-%m-%d"
             )
-            resp = self._newsapi.get_everything(
+            newsapi = self._newsapi
+            resp = await asyncio.to_thread(
+                newsapi.get_everything,
                 q=query,
                 from_param=from_date,
                 sort_by="relevancy",

@@ -9,7 +9,7 @@ class AsyncTokenBucket:
 
     def __init__(self, rate: float, capacity: float | None = None) -> None:
         self._rate = rate  # tokens per second
-        self._capacity = capacity or rate
+        self._capacity = max(capacity or rate, 1.0)
         self._tokens = self._capacity
         self._last_refill = time.monotonic()
         self._lock = asyncio.Lock()
