@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 import sys
 
 from src.config import Settings
@@ -37,27 +38,54 @@ async def _run() -> None:
     bot_app = BotApp(settings, polymarket, news, engine, repo)
     application = bot_app.build_application()
 
-    logger.info("Bot is ready. Polling for updates...")
-    try:
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-
-        # Run until interrupted
-        stop_event = asyncio.Event()
+    # Retry initialization in case of transient network issues (e.g. Railway cold start)
+    for attempt in range(5):
         try:
-            await stop_event.wait()
-        except (KeyboardInterrupt, SystemExit):
-            pass
-    finally:
-        logger.info("Shutting down...")
-        await application.updater.stop()
-        await application.stop()
+            logger.info("Initializing bot (attempt %d/5)...", attempt + 1)
+            await application.initialize()
+            break
+        except Exception as exc:
+            if attempt < 4:
+                wait = 2 ** (attempt + 1)
+                logger.warning("Init failed: %s — retrying in %ds", exc, wait)
+                await asyncio.sleep(wait)
+            else:
+                logger.error("Failed to initialize after 5 attempts: %s", exc)
+                raise
+
+    await application.start()
+    await application.updater.start_polling()
+    logger.info("Bot is live. Polling for updates...")
+
+    # Run until interrupted
+    stop_event = asyncio.Event()
+
+    def _signal_handler() -> None:
+        stop_event.set()
+
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _signal_handler)
+        except NotImplementedError:
+            pass  # Windows
+
+    await stop_event.wait()
+
+    # Graceful shutdown
+    logger.info("Shutting down...")
+    try:
+        if application.updater and application.updater.running:
+            await application.updater.stop()
+        if application.running:
+            await application.stop()
         await application.shutdown()
-        await polymarket.close()
-        await news.close()
-        await conn.close()
-        logger.info("Shutdown complete.")
+    except Exception as exc:
+        logger.warning("Shutdown error (non-fatal): %s", exc)
+    await polymarket.close()
+    await news.close()
+    await conn.close()
+    logger.info("Shutdown complete.")
 
 
 def main() -> None:
