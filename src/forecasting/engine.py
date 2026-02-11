@@ -93,15 +93,17 @@ class ForecastingEngine:
             articles_text=articles_text,
         )
 
-        # 3. Call Claude
+        # 3. Call Claude — scale max_tokens for multi-outcome markets
+        num_outcomes = len(outcomes)
+        max_tokens = 4096 if num_outcomes <= 3 else min(4096 + num_outcomes * 512, 8192)
         await self._rate_limiter.acquire()
-        logger.info("Calling Claude for: %s", market.question[:60])
+        logger.info("Calling Claude for: %s (%d outcomes)", market.question[:60], num_outcomes)
         response = await self._anthropic.messages.create(
             model=self._settings.claude_model,
-            max_tokens=4096,
+            max_tokens=max_tokens,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
-            timeout=120.0,
+            timeout=180.0,
         )
         reasoning = response.content[0].text
         logger.info("Claude responded (%d chars)", len(reasoning))

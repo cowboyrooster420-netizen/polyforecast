@@ -57,12 +57,16 @@ def format_forecast(result: ForecastResult) -> str:
     # ── Outcome comparison table ──
     lines.append("<b>PROBABILITY COMPARISON</b>")
     lines.append("<pre>")
-    lines.append(f"{'Outcome':<12} {'Bot':>7} {'Market':>7} {'Edge':>7}")
-    lines.append("-" * 36)
+    # Dynamically size outcome column based on longest name
+    max_name = max((len(of.outcome) for of in result.outcomes), default=7)
+    col_w = max(max_name + 1, 8)
+    lines.append(f"{'Outcome':<{col_w}} {'Bot':>7} {'Market':>7} {'Edge':>7}")
+    lines.append("-" * (col_w + 23))
     for of in result.outcomes:
         edge = of.bot_probability - of.market_probability
+        name = of.outcome[:col_w]
         lines.append(
-            f"{of.outcome:<12} {of.bot_probability:>6.1%} {of.market_probability:>6.1%} {edge:>+6.1%}"
+            f"{name:<{col_w}} {of.bot_probability:>6.1%} {of.market_probability:>6.1%} {edge:>+6.1%}"
         )
     lines.append("</pre>")
 

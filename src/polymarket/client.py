@@ -23,6 +23,35 @@ CATEGORY_KEYWORDS: dict[str, list[str]] = {
 }
 
 
+def _extract_outcome_name(market_question: str, event_title: str) -> str:
+    """Try to extract a clean outcome name from a sub-market question.
+
+    E.g. event "Who will win the 2026 election?" with sub-market
+    "Will Donald Trump win the 2026 election?" → "Donald Trump"
+    """
+    import re
+
+    q = market_question.strip().rstrip("?").strip()
+
+    # Common patterns: "Will X win/happen/be...", "X to win/happen..."
+    for pattern in [
+        r"^Will\s+(.+?)\s+(?:win|be |become |get |reach |pass |capture )",
+        r"^(.+?)\s+to\s+(?:win|be |become )",
+    ]:
+        m = re.match(pattern, q, re.IGNORECASE)
+        if m:
+            name = m.group(1).strip()
+            if len(name) > 3:
+                return name
+
+    # Fallback: if question is different from event title, use the full question
+    # but trim shared prefix/suffix with event title
+    if len(q) < 60:
+        return q
+
+    return q[:60]
+
+
 class PolymarketClient:
     def __init__(self, settings: Settings) -> None:
         self._gamma_base = settings.gamma_api_base
@@ -88,7 +117,11 @@ class PolymarketClient:
         return markets
 
     async def get_market(self, ref: str | ParsedMarketRef) -> Market | None:
-        """Fetch a single market by URL, slug, or condition ID."""
+        """Fetch a single market by URL, slug, or condition ID.
+
+        For multi-outcome events, merges all sub-markets into one unified
+        Market with all outcomes and their prices.
+        """
         if isinstance(ref, str):
             ref = parse_market_ref(ref)
 
@@ -100,10 +133,71 @@ class PolymarketClient:
 
         if ref.event_slug:
             event = await self.get_event_by_slug(ref.event_slug)
-            if event and event.markets:
+            if not event or not event.markets:
+                return None
+            # Single sub-market → return directly
+            if len(event.markets) == 1:
                 return event.markets[0]
+            # Multi-outcome event → merge into one virtual Market
+            return self._merge_event_markets(event)
 
         return None
+
+    @staticmethod
+    def _merge_event_markets(event: Event) -> Market:
+        """Merge multiple binary sub-markets into one multi-outcome Market.
+
+        Polymarket represents multi-outcome events (e.g. "Who will win?")
+        as separate binary markets per outcome. Each has a Yes token whose
+        price represents the implied probability for that outcome.
+        """
+        tokens: list[Token] = []
+        total_volume = 0.0
+        total_liquidity = 0.0
+        end_date = None
+        description_parts: list[str] = []
+
+        for m in event.markets:
+            # Use the Yes token price as the outcome's implied probability
+            yes_price = m.outcome_price("Yes") or 0.0
+            yes_token_id = ""
+            for t in m.tokens:
+                if t.outcome.lower() == "yes":
+                    yes_token_id = t.token_id
+                    break
+
+            # Derive outcome name from the sub-market question
+            # e.g. "Will Donald Trump win?" → "Donald Trump"
+            # or just use the question if we can't simplify it
+            outcome_name = _extract_outcome_name(m.question, event.title)
+
+            tokens.append(Token(
+                token_id=yes_token_id,
+                outcome=outcome_name,
+                price=yes_price,
+            ))
+            total_volume += m.volume
+            total_liquidity += m.liquidity
+            if m.end_date:
+                end_date = m.end_date
+            if m.description and len(description_parts) < 3:
+                description_parts.append(m.description)
+
+        # Use event-level info for the merged market
+        description = event.description or "\n---\n".join(description_parts)
+
+        return Market(
+            condition_id=event.event_id or event.markets[0].condition_id,
+            question=event.title or event.markets[0].question,
+            slug=event.slug,
+            description=description[:3000],
+            end_date=end_date,
+            active=True,
+            volume=total_volume,
+            liquidity=total_liquidity,
+            tokens=tokens,
+            category=event.category,
+        )
 
     async def get_event_by_slug(self, slug: str) -> Event | None:
         """Fetch an event and its markets by slug."""
