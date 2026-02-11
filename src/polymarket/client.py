@@ -129,7 +129,12 @@ class PolymarketClient:
             return await self._get_market_by_condition_id(ref.condition_id)
 
         if ref.slug:
-            return await self._get_market_by_slug(ref.slug)
+            market = await self._get_market_by_slug(ref.slug)
+            if market:
+                return market
+            # Slug didn't match a market — try as an event slug
+            logger.info("No market for slug '%s', trying as event", ref.slug)
+            ref = ParsedMarketRef(event_slug=ref.slug)
 
         if ref.event_slug:
             event = await self.get_event_by_slug(ref.event_slug)
