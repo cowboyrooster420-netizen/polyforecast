@@ -28,7 +28,13 @@ RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
     "politics": [
         ("Reuters Politics", "https://feeds.reuters.com/Reuters/PoliticsNews"),
         ("BBC Politics", "https://feeds.bbci.co.uk/news/politics/rss.xml"),
-        ("The Hill", "https://thehill.com/feed/"),
+        ("The Hill", "https://thehill.com/news/feed/"),
+        ("Politico", "https://rss.politico.com/congress.xml"),
+        ("Politico Picks", "https://rss.politico.com/politicopicks.xml"),
+        ("NPR Politics", "https://feeds.npr.org/1014/rss.xml"),
+        ("ProPublica", "https://feeds.propublica.org/propublica/main"),
+        ("Roll Call", "https://rollcall.com/feed/"),
+        ("Axios", "https://www.axios.com/feeds/feed.rss"),
     ],
     "crypto": [
         ("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"),
@@ -47,10 +53,18 @@ RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
     ],
     "geopolitics": [
         ("Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
-        ("Kyiv Independent", "https://kyivindependent.com/feed/"),
-        ("Defense One", "https://www.defenseone.com/rss/"),
+        ("Kyiv Independent", "https://kyivindependent.com/news-archive/rss/"),
+        ("Defense One", "https://www.defenseone.com/rss/all/"),
+        ("Politico Defense", "https://rss.politico.com/defense.xml"),
+        ("The Intercept", "https://theintercept.com/feed/?rss"),
         ("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
         ("Reuters World", "https://feeds.reuters.com/Reuters/worldNews"),
+        # Telegram — geopolitics & conflict aggregators
+        ("DD Geopolitics", "tg://DDGeopolitics"),
+        ("Geopolitics Watch", "tg://GeoPWatch"),
+        ("War Monitor Global", "tg://warmonitors"),
+        ("Middle East Spectator", "tg://Middle_East_Spectator"),
+        ("Geopolitics Live", "tg://geopolitics_live"),
     ],
     "frontline": [
         # ISW daily assessments via WordPress REST API (no RSS available)
@@ -304,7 +318,7 @@ class NewsClient:
         # Pick relevant feed categories based on query keywords
         categories_to_check = ["general"]
         for category, cat_keywords in {
-            "politics": {"politics", "president", "congress", "election", "government", "senate", "bill", "law", "shutdown"},
+            "politics": {"politics", "president", "congress", "election", "government", "senate", "bill", "law", "shutdown", "democrat", "republican", "gop", "biden", "trump", "vote", "poll", "legislation", "impeach", "scotus", "supreme", "speaker", "governor", "primary", "ballot", "midterm", "veto", "executive", "cabinet"},
             "crypto": {"crypto", "bitcoin", "btc", "ethereum", "eth", "solana", "defi", "token", "blockchain"},
             "finance": {"stock", "market", "fed", "inflation", "gdp", "economy", "gold", "oil", "rate", "treasury"},
             "science": {"ai", "tech", "space", "climate", "science", "model", "chip", "gpu", "openai"},
