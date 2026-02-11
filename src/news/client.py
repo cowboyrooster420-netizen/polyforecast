@@ -52,16 +52,16 @@ RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
         ("Reuters World", "https://feeds.reuters.com/Reuters/worldNews"),
     ],
     "frontline": [
-        # ISW daily assessments — the gold standard for frontline analysis
-        ("ISW", "https://www.understandingwar.org/rss.xml"),
-        # Telegram channels via RSSHub — granular frontline updates
-        ("DeepState UA", "https://rsshub.app/telegram/channel/DeepStateUA"),
-        ("Rybar", "https://rsshub.app/telegram/channel/ryaborig"),
-        ("Ukraine NOW", "https://rsshub.app/telegram/channel/ukrainenowenglish"),
-        ("Militaryland", "https://rsshub.app/telegram/channel/militaborlandnet"),
-        ("WarMonitor", "https://rsshub.app/telegram/channel/WarMonitor3"),
-        # Dedicated conflict tracking sites
-        ("Liveuamap", "https://liveuamap.com/rss"),
+        # ISW daily assessments
+        ("ISW", "https://www.understandingwar.org/backgrounder/feed"),
+        # Telegram channels — scraped from public web previews
+        ("DeepState UA", "tg://DeepStateUA"),
+        ("Rybar", "tg://rybar_force"),
+        ("Ukraine NOW", "tg://ukrainenowenglish"),
+        ("WarMonitor", "tg://WarMonitor3"),
+        # Dedicated conflict tracking
+        ("Militaryland", "https://militaryland.net/feed/"),
+        ("War Zone", "https://www.twz.com/feed"),
     ],
 }
 
@@ -74,7 +74,12 @@ class NewsClient:
         self._guardian_key: str | None = None
         if settings.guardian_api_key and len(settings.guardian_api_key) > 5:
             self._guardian_key = settings.guardian_api_key
-        self._http = httpx.AsyncClient(timeout=15.0)
+        self._http = httpx.AsyncClient(
+            timeout=15.0,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; Polyforecast/1.0; +https://github.com/cowboyrooster420-netizen/polyforecast)",
+            },
+        )
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -87,6 +92,8 @@ class NewsClient:
         """Fetch relevant news from all sources in parallel."""
         queries = extract_search_queries(question)
         primary_query = queries[0] if queries else question
+        # Shorter keyword query for APIs that need concise input (GDELT)
+        keyword_query = queries[-1] if len(queries) > 1 else primary_query
 
         # Fire all sources in parallel
         logger.info("News: fetching from all sources for: %s", primary_query[:60])
@@ -94,7 +101,7 @@ class NewsClient:
             self._search_newsapi(primary_query),
             self._search_guardian(primary_query),
             self._search_google_rss(primary_query),
-            self._search_gdelt(primary_query),
+            self._search_gdelt(keyword_query),
             self._search_rss_feeds(primary_query),
             return_exceptions=True,
         )
@@ -252,6 +259,11 @@ class NewsClient:
                 },
             )
             resp.raise_for_status()
+            text = resp.text.strip()
+            if not text or text.startswith("<!"):
+                # GDELT returns empty or HTML error page for no results
+                logger.info("GDELT: no results for: %s", query[:40])
+                return []
             data = resp.json()
             articles: list[Article] = []
             for item in data.get("articles", []):
@@ -324,15 +336,76 @@ class NewsClient:
         return all_articles
 
     async def _fetch_single_rss(self, source_name: str, feed_url: str) -> list[Article]:
-        """Fetch and parse a single RSS feed."""
+        """Fetch and parse a single RSS feed, or scrape Telegram channel."""
         try:
-            # Telegram/frontline feeds get more entries for better coverage
-            is_telegram = "rsshub.app/telegram" in feed_url
-            limit = 15 if is_telegram else 5
+            if feed_url.startswith("tg://"):
+                return await self._scrape_telegram_channel(
+                    source_name, feed_url[5:]
+                )
             resp = await self._http.get(feed_url)
             resp.raise_for_status()
-            return self._parse_rss_feed(resp.text, source_name)[:limit]
+            return self._parse_rss_feed(resp.text, source_name)[:10]
         except Exception:
+            return []
+
+    async def _scrape_telegram_channel(
+        self, source_name: str, channel: str
+    ) -> list[Article]:
+        """Scrape recent posts from a public Telegram channel's web preview."""
+        try:
+            url = f"https://t.me/s/{channel}"
+            resp = await self._http.get(url)
+            resp.raise_for_status()
+            html = resp.text
+
+            import re
+
+            articles: list[Article] = []
+            # Each message is in a tgme_widget_message div
+            messages = re.findall(
+                r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>',
+                html,
+                re.DOTALL,
+            )
+            # Extract timestamps
+            dates = re.findall(
+                r'<time[^>]*datetime="([^"]+)"', html
+            )
+
+            for i, msg_html in enumerate(messages[-15:]):
+                # Strip HTML tags to get plain text
+                text = re.sub(r"<[^>]+>", " ", msg_html).strip()
+                text = re.sub(r"\s+", " ", text)
+                if len(text) < 20:
+                    continue
+
+                published = None
+                date_idx = len(messages) - 15 + i
+                if 0 <= date_idx < len(dates):
+                    try:
+                        published = datetime.fromisoformat(
+                            dates[date_idx].replace("+00:00", "+00:00")
+                        )
+                        if published.tzinfo is None:
+                            published = published.replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pass
+
+                # Use first ~100 chars as title, full text as description
+                title = text[:100] + ("..." if len(text) > 100 else "")
+                articles.append(
+                    Article(
+                        title=title,
+                        source=source_name,
+                        url=f"https://t.me/{channel}",
+                        published_at=published,
+                        description=text[:500],
+                    )
+                )
+            logger.info("Telegram %s: scraped %d posts", channel, len(articles))
+            return articles
+        except Exception as exc:
+            logger.warning("Telegram scrape error for %s: %s", channel, exc)
             return []
 
     @staticmethod
