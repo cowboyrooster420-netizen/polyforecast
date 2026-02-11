@@ -283,9 +283,30 @@ async def _send_long_message(
         chunks.append(remaining[:split_pos])
         remaining = remaining[split_pos:].lstrip("\n")
 
-    for chunk in chunks:
+    # Fix unclosed HTML tags across chunks so Telegram doesn't reject them
+    open_tags = {
+        "<i>": "</i>",
+        "<b>": "</b>",
+        "<pre>": "</pre>",
+        "<code>": "</code>",
+    }
+    for i, chunk in enumerate(chunks):
+        # Check for unclosed tags — count opens vs closes
+        for open_tag, close_tag in open_tags.items():
+            opens = chunk.count(open_tag)
+            closes = chunk.count(close_tag)
+            if opens > closes:
+                # Close tag at end of this chunk, reopen at start of next
+                chunks[i] = chunk + close_tag
+                if i + 1 < len(chunks):
+                    chunks[i + 1] = open_tag + chunks[i + 1]
+
+    for idx, chunk in enumerate(chunks):
+        suffix = f"\n\n<i>({idx + 1}/{len(chunks)})</i>" if len(chunks) > 1 else ""
         try:
-            await update.message.reply_text(chunk, parse_mode=ParseMode.HTML)
+            await update.message.reply_text(
+                chunk + suffix, parse_mode=ParseMode.HTML
+            )
         except Exception:
             # Fallback: send without HTML if parsing fails
             await update.message.reply_text(chunk)

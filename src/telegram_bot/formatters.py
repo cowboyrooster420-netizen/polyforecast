@@ -87,12 +87,7 @@ def format_forecast(result: ForecastResult) -> str:
 
     # ── Full reasoning ──
     lines.append("\n<b>ANALYSIS</b>")
-    # Send up to 3500 chars of reasoning (Telegram max is 4096 per message,
-    # but we use _send_long_message to split if needed)
-    reasoning_preview = result.reasoning[:3500]
-    if len(result.reasoning) > 3500:
-        reasoning_preview += "\n[... truncated]"
-    lines.append(f"<i>{_escape(reasoning_preview)}</i>")
+    lines.append(f"<i>{_escape(result.reasoning)}</i>")
 
     # ── Footer ──
     lines.append(f"\nNews sources used: {result.news_article_count}")
