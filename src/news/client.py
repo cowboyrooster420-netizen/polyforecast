@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 import feedparser
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
     "general": [
         ("Reuters", "https://feeds.reuters.com/reuters/topNews"),
-        ("AP News", "https://rsshub.app/apnews/topics/apf-topnews"),
+        ("AP News", "https://apnews.com/feed"),
         ("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
     ],
     "politics": [
@@ -52,14 +53,16 @@ RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
         ("Reuters World", "https://feeds.reuters.com/Reuters/worldNews"),
     ],
     "frontline": [
-        # ISW daily assessments
-        ("ISW", "https://www.understandingwar.org/backgrounder/feed"),
+        # ISW daily assessments via WordPress REST API (no RSS available)
+        ("ISW", "isw_api://"),
         # Telegram channels — scraped from public web previews
         ("DeepState UA", "tg://DeepStateUA"),
-        ("Rybar", "tg://rybar_force"),
+        ("Rybar EN", "tg://rybar_in_english"),
         ("Ukraine NOW", "tg://ukrainenowenglish"),
-        ("WarMonitor", "tg://WarMonitor3"),
-        # Dedicated conflict tracking
+        ("WarMonitor", "tg://WarMonitor1"),
+        # RSS feeds
+        ("Kyiv Independent", "https://kyivindependent.com/news-archive/rss/"),
+        ("Defense One", "https://www.defenseone.com/rss/all/"),
         ("Militaryland", "https://militaryland.net/feed/"),
         ("War Zone", "https://www.twz.com/feed"),
     ],
@@ -336,16 +339,57 @@ class NewsClient:
         return all_articles
 
     async def _fetch_single_rss(self, source_name: str, feed_url: str) -> list[Article]:
-        """Fetch and parse a single RSS feed, or scrape Telegram channel."""
+        """Fetch and parse a single RSS feed, scrape Telegram, or call ISW API."""
         try:
             if feed_url.startswith("tg://"):
                 return await self._scrape_telegram_channel(
                     source_name, feed_url[5:]
                 )
+            if feed_url == "isw_api://":
+                return await self._fetch_isw_api()
             resp = await self._http.get(feed_url)
             resp.raise_for_status()
             return self._parse_rss_feed(resp.text, source_name)[:10]
         except Exception:
+            return []
+
+    async def _fetch_isw_api(self) -> list[Article]:
+        """Fetch ISW daily assessments via WordPress REST API."""
+        try:
+            resp = await self._http.get(
+                "https://understandingwar.org/wp-json/wp/v2/posts",
+                params={"per_page": 10},
+            )
+            resp.raise_for_status()
+            posts = resp.json()
+            articles: list[Article] = []
+            for post in posts:
+                published = None
+                if post.get("date_gmt"):
+                    try:
+                        published = datetime.fromisoformat(
+                            post["date_gmt"] + "+00:00"
+                        )
+                    except ValueError:
+                        pass
+                # Title comes as {"rendered": "..."}
+                title = post.get("title", {}).get("rendered", "")
+                # Excerpt as description
+                excerpt = post.get("excerpt", {}).get("rendered", "")
+                excerpt = re.sub(r"<[^>]+>", "", excerpt).strip()[:500]
+                articles.append(
+                    Article(
+                        title=title,
+                        source="ISW",
+                        url=post.get("link", ""),
+                        published_at=published,
+                        description=excerpt,
+                    )
+                )
+            logger.info("ISW API: fetched %d posts", len(articles))
+            return articles
+        except Exception as exc:
+            logger.warning("ISW API error: %s", exc)
             return []
 
     async def _scrape_telegram_channel(
@@ -354,12 +398,9 @@ class NewsClient:
         """Scrape recent posts from a public Telegram channel's web preview."""
         try:
             url = f"https://t.me/s/{channel}"
-            resp = await self._http.get(url)
+            resp = await self._http.get(url, follow_redirects=True)
             resp.raise_for_status()
             html = resp.text
-
-            import re
-
             articles: list[Article] = []
             # Each message is in a tgme_widget_message div
             messages = re.findall(
