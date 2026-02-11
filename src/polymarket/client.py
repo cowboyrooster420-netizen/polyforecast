@@ -133,13 +133,15 @@ class PolymarketClient:
 
         if ref.event_slug:
             event = await self.get_event_by_slug(ref.event_slug)
-            if not event or not event.markets:
-                return None
-            # Single sub-market → return directly
-            if len(event.markets) == 1:
-                return event.markets[0]
-            # Multi-outcome event → merge into one virtual Market
-            return self._merge_event_markets(event)
+            if event and event.markets:
+                # Single sub-market → return directly
+                if len(event.markets) == 1:
+                    return event.markets[0]
+                # Multi-outcome event → merge into one virtual Market
+                return self._merge_event_markets(event)
+            # Event lookup failed — try event_slug as a market slug
+            logger.info("Falling back: trying event_slug '%s' as market slug", ref.event_slug)
+            return await self._get_market_by_slug(ref.event_slug)
 
         return None
 
@@ -201,11 +203,15 @@ class PolymarketClient:
 
     async def get_event_by_slug(self, slug: str) -> Event | None:
         """Fetch an event and its markets by slug."""
+        logger.info("Fetching event by slug: %s", slug)
         try:
             items = await self._gamma_get("/events", {"slug": slug})
-        except httpx.HTTPStatusError:
+        except httpx.HTTPStatusError as exc:
+            logger.warning("Event fetch failed for slug %s: %s", slug, exc)
             return None
         if not items:
+            # Event slug not found — try as a market slug instead
+            logger.info("No event found for slug '%s', trying as market slug", slug)
             return None
 
         item = items[0]
@@ -218,14 +224,17 @@ class PolymarketClient:
         )
 
         raw_markets = item.get("markets", [])
+        logger.info("Event '%s' has %d sub-markets", event.title[:40], len(raw_markets))
         for rm in raw_markets:
             try:
                 m = self._parse_gamma_market(rm)
                 await self._enrich_prices(m)
                 event.markets.append(m)
-            except Exception:
+            except Exception as exc:
+                logger.debug("Skipping sub-market: %s", exc)
                 continue
 
+        logger.info("Parsed %d markets for event '%s'", len(event.markets), event.title[:40])
         return event
 
     async def get_market_prices(self, token_ids: list[str]) -> dict[str, float]:
