@@ -70,7 +70,9 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "<b>/calibration</b>\n"
         "  Show calibration table and chart for resolved predictions\n\n"
         "<b>/news</b> &lt;topic&gt;\n"
-        "  Search for recent news on a topic\n",
+        "  Search for recent news on a topic\n\n"
+        "<b>/resolve</b> [slug] [outcome]\n"
+        "  Resolve a prediction. No args = show unresolved. With slug = auto-check Polymarket. With slug + outcome = manual resolve.\n",
         parse_mode=ParseMode.HTML,
     )
 
@@ -253,6 +255,97 @@ async def news_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         text = "Failed to fetch news. Please try again."
 
     await _send_long_message(update, text)
+
+
+async def resolve_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message or not _authorized(update, context):
+        return
+
+    app = _get_app(context)
+    user_id = update.effective_user.id if update.effective_user else 0
+
+    # No args → show unresolved predictions
+    if not context.args:
+        await update.message.chat.send_action(ChatAction.TYPING)
+        unresolved = await app.repo.get_unresolved_predictions(user_id)
+        if not unresolved:
+            await update.message.reply_text("No unresolved predictions.")
+            return
+        lines = ["<b>Unresolved predictions:</b>\n"]
+        for p in unresolved:
+            lines.append(
+                f"  <code>{p['market_slug'] or p['condition_id'][:16]}</code>\n"
+                f"  {p['market_question'][:60]}\n"
+            )
+        lines.append(
+            "\nTo resolve: /resolve &lt;slug&gt;\n"
+            "(Auto-checks Polymarket for result)\n\n"
+            "Or manually: /resolve &lt;slug&gt; &lt;winning outcome&gt;"
+        )
+        await _send_long_message(update, "\n".join(lines))
+        return
+
+    ref = context.args[0].strip()
+    manual_outcome = " ".join(context.args[1:]).strip() if len(context.args) > 1 else None
+
+    await update.message.chat.send_action(ChatAction.TYPING)
+
+    # Find the condition_id for this slug
+    unresolved = await app.repo.get_unresolved_predictions(user_id)
+    match = None
+    for p in unresolved:
+        if ref.lower() in (
+            (p.get("market_slug") or "").lower(),
+            (p.get("condition_id") or "").lower(),
+        ):
+            match = p
+            break
+
+    if not match:
+        await update.message.reply_text(
+            f"No unresolved prediction found for '{ref}'.\n"
+            "Use /resolve with no args to see your unresolved predictions."
+        )
+        return
+
+    condition_id = match["condition_id"]
+    winning_outcome = manual_outcome
+
+    # Auto-check Polymarket if no manual outcome given
+    if not winning_outcome:
+        try:
+            market = await app.polymarket.get_market(condition_id)
+            if market and market.resolved and market.resolution:
+                winning_outcome = market.resolution
+            elif market and market.resolved:
+                # Try to infer from token prices (winner = price ~1.0)
+                for t in market.tokens:
+                    if t.price >= 0.95:
+                        winning_outcome = t.outcome
+                        break
+        except Exception as exc:
+            logger.warning("Failed to auto-resolve from Polymarket: %s", exc)
+
+    if not winning_outcome:
+        await update.message.reply_text(
+            f"Market not yet resolved on Polymarket.\n"
+            f"Resolve manually: /resolve {ref} &lt;winning outcome&gt;\n\n"
+            f"Outcomes: {match.get('outcomes', 'unknown')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    # Resolve in database
+    count = await app.repo.resolve_prediction(condition_id, winning_outcome)
+    brier = await app.repo.get_brier_score(user_id)
+    brier_str = f"\nOverall Brier score: {brier:.4f}" if brier is not None else ""
+
+    await update.message.reply_text(
+        f"Resolved {count} predictions for:\n"
+        f"<b>{match['market_question'][:80]}</b>\n"
+        f"Winner: <b>{winning_outcome}</b>{brier_str}",
+        parse_mode=ParseMode.HTML,
+    )
 
 
 async def _send_long_message(

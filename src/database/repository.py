@@ -137,6 +137,29 @@ class Repository:
         await self._conn.commit()
         return count
 
+    async def get_unresolved_predictions(
+        self, telegram_user_id: int | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Get distinct unresolved markets."""
+        where = "WHERE resolved = 0"
+        params: tuple = ()
+        if telegram_user_id:
+            where += " AND telegram_user_id = ?"
+            params = (telegram_user_id,)
+        cursor = await self._conn.execute(
+            f"""SELECT condition_id, market_question, market_slug,
+                       MIN(created_at) as first_analyzed,
+                       GROUP_CONCAT(DISTINCT outcome) as outcomes
+                FROM predictions
+                {where}
+                GROUP BY condition_id
+                ORDER BY first_analyzed DESC
+                LIMIT ?""",
+            (*params, limit),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
     # ── Calibration / stats ──────────────────────────────────
 
     async def get_brier_score(self, telegram_user_id: int | None = None) -> float | None:

@@ -16,6 +16,7 @@ from src.telegram_bot.handlers import (
     markets_handler,
     news_handler,
     portfolio_handler,
+    resolve_handler,
     setcategories_handler,
     start_handler,
 )
@@ -59,5 +60,6 @@ class BotApp:
         application.add_handler(CommandHandler("portfolio", portfolio_handler))
         application.add_handler(CommandHandler("calibration", calibration_handler))
         application.add_handler(CommandHandler("news", news_handler))
+        application.add_handler(CommandHandler("resolve", resolve_handler))
 
         return application
