@@ -34,6 +34,10 @@ class Settings:
     brave_llm_context_url: str = "https://api.search.brave.com/res/v1/llm/context"
 
     # Research layer knobs
+    # When true (and provider keys exist), the blind forecast uses the Exa/Brave
+    # research layer instead of the news RSS pipeline. Falls back to news if the
+    # research layer is unavailable or errors.
+    use_research_retrieval: bool = True
     research_freshness_days: int = 30  # current-state facts older than this are dropped
     research_max_facts: int = 40  # hard cap on facts handed to the forecaster
     exa_results_per_query: int = 5
@@ -86,7 +90,13 @@ class Settings:
             for uid in auth_users_raw.split(",")
             if uid.strip().isdigit()
         ]
+        use_research = os.environ.get("RESEARCH_RETRIEVAL", "true").strip().lower() not in (
+            "false",
+            "0",
+            "no",
+        )
         return cls(
+            use_research_retrieval=use_research,
             anthropic_api_key=os.environ["ANTHROPIC_API_KEY"],
             newsapi_key=os.environ.get("NEWSAPI_KEY", ""),
             guardian_api_key=os.environ.get("GUARDIAN_API_KEY", ""),

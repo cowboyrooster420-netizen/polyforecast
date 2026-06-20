@@ -135,7 +135,7 @@ USER_PROMPT_TEMPLATE = """\
 
 ---
 
-**Recent news articles**:
+**Research & source material**:
 
 {articles_text}
 

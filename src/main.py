@@ -11,6 +11,7 @@ from src.database.repository import Repository
 from src.forecasting.engine import ForecastingEngine
 from src.news.client import NewsClient
 from src.polymarket.client import PolymarketClient
+from src.research.retriever import ResearchRetriever
 from src.telegram_bot.bot import BotApp
 
 logging.basicConfig(
@@ -32,7 +33,8 @@ async def _run() -> None:
     # Initialise clients
     polymarket = PolymarketClient(settings)
     news = NewsClient(settings)
-    engine = ForecastingEngine(settings, polymarket, news)
+    research = ResearchRetriever(settings)
+    engine = ForecastingEngine(settings, polymarket, news, research)
 
     # Build and run Telegram bot
     bot_app = BotApp(settings, polymarket, news, engine, repo)
@@ -84,6 +86,7 @@ async def _run() -> None:
         logger.warning("Shutdown error (non-fatal): %s", exc)
     await polymarket.close()
     await news.close()
+    await research.close()
     await conn.close()
     logger.info("Shutdown complete.")
 

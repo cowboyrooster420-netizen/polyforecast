@@ -50,6 +50,11 @@ class ResearchRetriever:
         self._freshness_days = settings.research_freshness_days
         self._blocked_domains = {d.lower() for d in settings.research_exclude_domains}
 
+    @property
+    def enabled(self) -> bool:
+        """True if at least one provider has an API key configured."""
+        return self._exa.enabled or self._brave.enabled
+
     async def close(self) -> None:
         await self._http.aclose()
 

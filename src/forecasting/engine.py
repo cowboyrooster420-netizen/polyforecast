@@ -20,9 +20,33 @@ from src.news.client import NewsClient
 from src.news.models import Article
 from src.polymarket.client import PolymarketClient
 from src.polymarket.models import Market
+from src.research.models import RetrievedFact
+from src.research.retriever import ResearchRetriever
 from src.utils.rate_limiter import AsyncTokenBucket
 
 logger = logging.getLogger(__name__)
+
+
+def _fact_to_article(fact: RetrievedFact) -> Article:
+    """Map a research fact onto the Article shape so provenance still lands in
+    the news_articles table when the research layer is the context source."""
+    published = (
+        datetime(
+            fact.published_date.year,
+            fact.published_date.month,
+            fact.published_date.day,
+            tzinfo=timezone.utc,
+        )
+        if fact.published_date
+        else None
+    )
+    return Article(
+        title=fact.text[:120],
+        source=fact.source_name or fact.provider.value,
+        url=fact.source_url,
+        published_at=published,
+        description=fact.text[:500],
+    )
 
 
 def _format_articles(articles: list[Article]) -> str:
@@ -63,28 +87,61 @@ class ForecastingEngine:
         settings: Settings,
         polymarket: PolymarketClient,
         news: NewsClient,
+        research: ResearchRetriever | None = None,
     ) -> None:
         self._settings = settings
         self._polymarket = polymarket
         self._news = news
+        self._research = research
         self._anthropic = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         self._rate_limiter = AsyncTokenBucket(settings.anthropic_rpm / 60.0)
 
-    async def analyze_market(self, market: Market) -> ForecastResult:
-        """Full pipeline: fetch news → prompt Claude → parse → compute EV."""
-        # 1. Fetch news articles
+    async def _gather_context(
+        self, market: Market, end_date_str: str
+    ) -> tuple[str, int, list[Article]]:
+        """Assemble the source material for the BLIND forecast.
+
+        Prefers the question-driven research layer (price-blind by design); falls
+        back to the news pipeline if research is disabled, unconfigured, or errors.
+        Returns (context_text, source_count, articles_for_db).
+        """
+        if (
+            self._research is not None
+            and self._settings.use_research_retrieval
+            and self._research.enabled
+        ):
+            try:
+                logger.info("Step 1: Research retrieval for: %s", market.question[:60])
+                briefing = await self._research.research(
+                    question=market.question,
+                    resolution_criteria=market.description[:2000],
+                    end_date=end_date_str,
+                )
+                facts = briefing.facts
+                logger.info("Step 1 done: %d research facts", len(facts))
+                return briefing.render(), len(facts), [_fact_to_article(f) for f in facts]
+            except Exception as exc:
+                logger.warning("Research retrieval failed (%s); falling back to news", exc)
+
         logger.info("Step 1: Fetching news for: %s", market.question[:60])
         articles = await self._news.fetch_articles_for_market(market.question)
         logger.info("Step 1 done: got %d articles", len(articles))
-        articles_text = _format_articles(articles)
+        return _format_articles(articles), len(articles), articles
 
-        # 2. Build prompt — intentionally exclude market prices to avoid anchoring
+    async def analyze_market(self, market: Market) -> ForecastResult:
+        """Full pipeline: gather source material → prompt Claude → parse → compute EV."""
         outcomes = [t.outcome for t in market.tokens]
         end_date_str = (
             market.end_date.strftime("%Y-%m-%d") if market.end_date else "unspecified"
         )
         today_str = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
 
+        # 1. Gather source material (research layer, falling back to news).
+        articles_text, source_count, articles = await self._gather_context(
+            market, end_date_str
+        )
+
+        # 2. Build prompt — intentionally exclude market prices to avoid anchoring
         user_prompt = build_user_prompt(
             question=market.question,
             description=market.description[:2000],
