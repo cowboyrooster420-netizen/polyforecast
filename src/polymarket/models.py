@@ -26,6 +26,9 @@ class Market(BaseModel):
     tokens: list[Token] = Field(default_factory=list)
     category: str = ""
     image: str = ""
+    # Polymarket's clean per-outcome label for multi-outcome events
+    # (e.g. "No change", "25 bps increase"). Preferred over name extraction.
+    group_item_title: str = ""
 
     @property
     def url(self) -> str:

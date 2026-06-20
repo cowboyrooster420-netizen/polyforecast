@@ -176,10 +176,11 @@ class PolymarketClient:
                     yes_token_id = t.token_id
                     break
 
-            # Derive outcome name from the sub-market question
-            # e.g. "Will Donald Trump win?" → "Donald Trump"
-            # or just use the question if we can't simplify it
-            outcome_name = _extract_outcome_name(m.question, event.title)
+            # Prefer Polymarket's clean per-outcome label; fall back to
+            # extracting a name from the sub-market question.
+            outcome_name = m.group_item_title or _extract_outcome_name(
+                m.question, event.title
+            )
 
             tokens.append(Token(
                 token_id=yes_token_id,
@@ -372,6 +373,7 @@ class PolymarketClient:
             tokens=tokens,
             category=item.get("category", ""),
             image=item.get("image", ""),
+            group_item_title=item.get("groupItemTitle", "") or "",
         )
 
     @staticmethod
