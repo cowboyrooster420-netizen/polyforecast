@@ -163,6 +163,9 @@ class PolymarketClient:
         total_liquidity = 0.0
         end_date = None
         description_parts: list[str] = []
+        # An event has concluded once all of its binary sub-markets have.
+        all_closed = bool(event.markets) and all(m.closed for m in event.markets)
+        all_resolved = bool(event.markets) and all(m.resolved for m in event.markets)
 
         for m in event.markets:
             # Use the Yes token price as the outcome's implied probability
@@ -199,7 +202,9 @@ class PolymarketClient:
             slug=event.slug,
             description=description[:3000],
             end_date=end_date,
-            active=True,
+            active=not all_closed,
+            closed=all_closed,
+            resolved=all_resolved,
             volume=total_volume,
             liquidity=total_liquidity,
             tokens=tokens,

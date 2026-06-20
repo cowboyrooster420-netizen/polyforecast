@@ -21,8 +21,8 @@ class Settings:
     gamma_api_base: str = "https://gamma-api.polymarket.com"
     clob_api_base: str = "https://clob.polymarket.com"
 
-    # Claude model
-    claude_model: str = "claude-sonnet-4-5-20250929"
+    # Claude model — Opus 4.8 with adaptive thinking for reasoning-heavy forecasting
+    claude_model: str = "claude-opus-4-8"
 
     # Database — use RAILWAY_VOLUME_MOUNT_PATH if available for persistence
     db_path: str = str(

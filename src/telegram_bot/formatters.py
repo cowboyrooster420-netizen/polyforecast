@@ -63,8 +63,13 @@ def format_forecast(result: ForecastResult) -> str:
     lines.append(f"{'Outcome':<{col_w}} {'Bot':>7} {'Market':>7} {'Edge':>7}")
     lines.append("-" * (col_w + 23))
     for of in result.outcomes:
-        edge = of.bot_probability - of.market_probability
         name = of.outcome[:col_w]
+        if not of.has_market_price:
+            lines.append(
+                f"{name:<{col_w}} {of.bot_probability:>6.1%} {'n/a':>7} {'n/a':>7}"
+            )
+            continue
+        edge = of.bot_probability - of.market_probability
         lines.append(
             f"{name:<{col_w}} {of.bot_probability:>6.1%} {of.market_probability:>6.1%} {edge:>+6.1%}"
         )
@@ -72,13 +77,16 @@ def format_forecast(result: ForecastResult) -> str:
 
     # ── EV & Recommendation ──
     lines.append("\n<b>RECOMMENDATIONS</b>")
-    for of in result.outcomes:
+    priced = [of for of in result.outcomes if of.has_market_price]
+    for of in priced:
         rec_tag = _REC_EMOJI.get(of.recommendation, "")
         lines.append(
             f"  <b>{_escape(of.outcome)}</b>: {of.recommendation.value} {rec_tag}\n"
             f"    EV per dollar: {of.ev_per_dollar:+.2%}\n"
             f"    Kelly fraction: {of.kelly_fraction:.1%}"
         )
+    if not priced:
+        lines.append("  No market prices available — EV cannot be computed.")
 
     best = result.best_opportunity
     if best and best.ev_per_dollar > 0:
@@ -93,8 +101,13 @@ def format_forecast(result: ForecastResult) -> str:
     lines.append("\n<b>ANALYSIS</b>")
     lines.append(f"<i>{_escape(result.reasoning)}</i>")
 
+    if result.key_assumption:
+        lines.append(f"\n<b>Key assumption:</b> {_escape(result.key_assumption)}")
+
     # ── Footer ──
-    lines.append(f"\nNews sources used: {result.news_article_count}")
+    if result.confidence_label:
+        lines.append(f"\nForecast confidence: {result.confidence_label}")
+    lines.append(f"News sources used: {result.news_article_count}")
 
     return "\n".join(lines)
 

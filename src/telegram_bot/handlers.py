@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 
+from src.polymarket.models import Market
 from src.telegram_bot.formatters import (
     format_calibration_table,
     format_forecast,
@@ -20,6 +21,29 @@ if TYPE_CHECKING:
     from src.telegram_bot.bot import BotApp
 
 logger = logging.getLogger(__name__)
+
+
+def _infer_winning_outcome(market: Market) -> str | None:
+    """Determine the winning outcome of a resolved market.
+
+    Handles both binary markets (resolution string is "Yes"/"No") and merged
+    multi-outcome events (winner's token trades at ~1.0 and carries the
+    extracted outcome name we stored at prediction time).
+    """
+    if not market.resolved:
+        return None
+    # Map the resolution string onto a known outcome name when possible.
+    if market.resolution:
+        for t in market.tokens:
+            if t.outcome.lower() == market.resolution.lower():
+                return t.outcome
+        return market.resolution
+    # Multi-outcome event: the winning outcome's YES token settles near 1.0.
+    if market.tokens:
+        top = max(market.tokens, key=lambda t: t.price)
+        if top.price >= 0.9:
+            return top.outcome
+    return None
 
 
 def _get_app(context: ContextTypes.DEFAULT_TYPE) -> BotApp:
@@ -136,8 +160,10 @@ async def analyze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # Run analysis
         result = await app.engine.analyze_market(market)
 
-        # Save prediction + snapshot
-        await app.repo.save_prediction(result, telegram_user_id=user_id)
+        # Save prediction + snapshot (include the articles that informed it)
+        await app.repo.save_prediction(
+            result, articles=result.articles, telegram_user_id=user_id
+        )
         await app.repo.save_market_snapshot(market)
         await app.repo.touch_user(user_id)
 
@@ -313,16 +339,13 @@ async def resolve_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     # Auto-check Polymarket if no manual outcome given
     if not winning_outcome:
+        # Prefer the slug for re-fetch: merged multi-outcome events are stored
+        # under a numeric event id that won't resolve as a condition_id or slug.
+        fetch_ref = match.get("market_slug") or condition_id
         try:
-            market = await app.polymarket.get_market(condition_id)
-            if market and market.resolved and market.resolution:
-                winning_outcome = market.resolution
-            elif market and market.resolved:
-                # Try to infer from token prices (winner = price ~1.0)
-                for t in market.tokens:
-                    if t.price >= 0.95:
-                        winning_outcome = t.outcome
-                        break
+            market = await app.polymarket.get_market(fetch_ref)
+            if market:
+                winning_outcome = _infer_winning_outcome(market)
         except Exception as exc:
             logger.warning("Failed to auto-resolve from Polymarket: %s", exc)
 

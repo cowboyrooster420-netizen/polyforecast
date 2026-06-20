@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import json
 import logging
-import re
 from datetime import datetime, timezone
 
 import anthropic
 
 from src.config import Settings
 from src.forecasting.ev_calculator import evaluate_outcome
-from src.forecasting.models import ForecastResult, OutcomeForecast
+from src.forecasting.models import (
+    CONFIDENCE_TO_FLOAT,
+    FORECAST_JSON_SCHEMA,
+    ForecastOutput,
+    ForecastResult,
+    OutcomeForecast,
+)
 from src.forecasting.prompts import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
 from src.news.client import NewsClient
 from src.news.models import Article
@@ -31,28 +37,23 @@ def _format_articles(articles: list[Article]) -> str:
     return "\n\n".join(parts)
 
 
-def _parse_probabilities(text: str, outcomes: list[str]) -> dict[str, float]:
-    """Extract outcome probabilities from Claude's response."""
-    probs: dict[str, float] = {}
+def _extract_text_block(response: anthropic.types.Message) -> str:
+    """Return the first text content block.
 
-    # Look for the PROBABILITIES: block
-    prob_section = text.split("PROBABILITIES:")[-1] if "PROBABILITIES:" in text else text
+    With adaptive thinking enabled the first block is a thinking block, so we
+    can't assume content[0] is text.
+    """
+    for block in response.content:
+        if block.type == "text":
+            return block.text
+    raise RuntimeError("No text block in Claude response")
 
-    for outcome in outcomes:
-        # Match "Outcome: 0.XX" or "Outcome: .XX"
-        pattern = re.compile(
-            rf"{re.escape(outcome)}\s*:\s*(0?\.\d+|1\.0+|0+\.0+|1)",
-            re.IGNORECASE,
-        )
-        match = pattern.search(prob_section)
-        if match:
-            probs[outcome] = float(match.group(1))
 
-    # Normalise so they sum to 1.0 if close
+def _normalize_probs(probs: dict[str, float]) -> dict[str, float]:
+    """Renormalize to sum to 1.0 when the model's output is close but not exact."""
     total = sum(probs.values())
     if probs and 0.9 < total < 1.1 and total != 1.0:
-        probs = {k: v / total for k, v in probs.items()}
-
+        return {k: v / total for k, v in probs.items()}
     return probs
 
 
@@ -93,7 +94,8 @@ class ForecastingEngine:
             articles_text=articles_text,
         )
 
-        # 3. Call Claude — scale max_tokens for multi-outcome markets
+        # 3. Call Claude with adaptive thinking + structured output.
+        #    The system prompt is cached (prefix match) to cut cost on repeat calls.
         num_outcomes = len(outcomes)
         max_tokens = 4096 if num_outcomes <= 3 else min(4096 + num_outcomes * 512, 8192)
         await self._rate_limiter.acquire()
@@ -101,32 +103,64 @@ class ForecastingEngine:
         response = await self._anthropic.messages.create(
             model=self._settings.claude_model,
             max_tokens=max_tokens,
-            system=SYSTEM_PROMPT,
+            system=[
+                {
+                    "type": "text",
+                    "text": SYSTEM_PROMPT,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=[{"role": "user", "content": user_prompt}],
+            thinking={"type": "adaptive"},
+            output_config={
+                "format": {"type": "json_schema", "schema": FORECAST_JSON_SCHEMA}
+            },
             timeout=180.0,
         )
-        reasoning = response.content[0].text
-        logger.info("Claude responded (%d chars)", len(reasoning))
+        if response.stop_reason == "refusal":
+            raise RuntimeError("Claude refused to analyze this market")
 
-        # 4. Parse probabilities from response
-        probs = _parse_probabilities(reasoning, outcomes)
+        # 4. Parse the structured forecast (guaranteed valid JSON in the text block).
+        forecast = ForecastOutput.model_validate(json.loads(_extract_text_block(response)))
+        logger.info(
+            "Claude responded (confidence=%s, %d probabilities)",
+            forecast.confidence.value,
+            len(forecast.probabilities),
+        )
 
-        # 5. Compute EV for each outcome by comparing against market prices
+        probs = _normalize_probs(
+            {p.outcome.strip().lower(): p.probability for p in forecast.probabilities}
+        )
+
+        # 5. Compute EV per outcome against market prices.
         outcome_forecasts: list[OutcomeForecast] = []
         for token in market.tokens:
-            bot_prob = probs.get(token.outcome, 0.5 / len(market.tokens))
-            market_prob = token.price if token.price > 0 else 0.5
-            of = evaluate_outcome(token.outcome, bot_prob, market_prob)
+            bot_prob = probs.get(token.outcome.strip().lower())
+            if bot_prob is None:
+                # The model didn't return a probability for this outcome — don't
+                # fabricate one. Skip it rather than bet on a guess.
+                logger.warning("No model probability for outcome %r; skipping", token.outcome)
+                continue
+            of = evaluate_outcome(
+                token.outcome,
+                bot_prob,
+                token.price,
+                has_market_price=token.price > 0,
+            )
             outcome_forecasts.append(of)
 
         return ForecastResult(
             condition_id=market.condition_id,
             question=market.question,
             slug=market.slug,
-            reasoning=reasoning,
+            reasoning=forecast.briefing,
             outcomes=outcome_forecasts,
+            confidence=CONFIDENCE_TO_FLOAT.get(forecast.confidence, 0.0),
+            confidence_label=forecast.confidence.value,
+            key_assumption=forecast.key_assumption,
             prompt_version=PROMPT_VERSION,
             news_article_count=len(articles),
+            articles=articles,
         )
 
     async def analyze_by_ref(self, ref: str) -> ForecastResult | None:

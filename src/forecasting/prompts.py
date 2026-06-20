@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 SYSTEM_PROMPT = """\
 You are a Superforecaster — a rigorous, calibrated probability estimator trained in the methodology developed by Philip Tetlock's Good Judgment Project. Your job is to analyze a prediction market question, research it thoroughly using available news and information, and produce a structured forecast with a probability estimate.
@@ -141,14 +141,11 @@ USER_PROMPT_TEMPLATE = """\
 
 ---
 
-Please analyze this question using the superforecasting methodology above.
-
-After your analysis, provide your final answer in EXACTLY this format (one line per outcome, no extra text after the block):
-
-PROBABILITIES:
-{outcome_lines}
-
-Replace each <decimal> with your probability estimate. They must sum to 1.0.
+Please analyze this question using the superforecasting methodology above, then
+return your forecast in the required structured format. Your `probabilities`
+array must contain exactly one entry per possible outcome listed above, using
+the outcome names verbatim, and the probabilities must sum to 1.0. Put your
+full written briefing (Step 7) in the `briefing` field.
 """
 
 
@@ -160,7 +157,6 @@ def build_user_prompt(
     today: str,
     articles_text: str,
 ) -> str:
-    outcome_lines = "\n".join(f"{outcome}: <decimal>" for outcome in outcomes)
     return USER_PROMPT_TEMPLATE.format(
         question=question,
         description=description,
@@ -168,5 +164,4 @@ def build_user_prompt(
         end_date=end_date,
         today=today,
         articles_text=articles_text if articles_text.strip() else "(No recent news found.)",
-        outcome_lines=outcome_lines,
     )

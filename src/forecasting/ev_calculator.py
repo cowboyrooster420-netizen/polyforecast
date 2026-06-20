@@ -41,7 +41,22 @@ def evaluate_outcome(
     outcome: str,
     bot_prob: float,
     market_prob: float,
+    has_market_price: bool = True,
 ) -> OutcomeForecast:
+    # No market price → we can't compute a real edge. Record the bot's
+    # probability but emit a neutral, non-actionable recommendation rather
+    # than inventing an EV against a fabricated price.
+    if not has_market_price:
+        return OutcomeForecast(
+            outcome=outcome,
+            bot_probability=bot_prob,
+            market_probability=0.0,
+            ev_per_dollar=0.0,
+            kelly_fraction=0.0,
+            recommendation=Recommendation.AVOID,
+            has_market_price=False,
+        )
+
     ev = compute_ev(bot_prob, market_prob)
     kelly = compute_kelly(bot_prob, market_prob)
     rec = classify_recommendation(ev)

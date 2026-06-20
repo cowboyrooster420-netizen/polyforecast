@@ -21,16 +21,15 @@ logger = logging.getLogger(__name__)
 
 RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
     "general": [
-        ("Reuters", "https://feeds.reuters.com/reuters/topNews"),
-        ("AP News", "https://apnews.com/feed"),
+        ("NPR News", "https://feeds.npr.org/1001/rss.xml"),
+        ("Guardian World", "https://www.theguardian.com/world/rss"),
         ("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
     ],
     "politics": [
-        ("Reuters Politics", "https://feeds.reuters.com/Reuters/PoliticsNews"),
         ("BBC Politics", "https://feeds.bbci.co.uk/news/politics/rss.xml"),
         ("The Hill", "https://thehill.com/news/feed/"),
         ("Politico", "https://rss.politico.com/congress.xml"),
-        ("Politico Picks", "https://rss.politico.com/politicopicks.xml"),
+        ("Guardian US Politics", "https://www.theguardian.com/us-news/us-politics/rss"),
         ("NPR Politics", "https://feeds.npr.org/1014/rss.xml"),
         ("ProPublica", "https://feeds.propublica.org/propublica/main"),
         ("Roll Call", "https://rollcall.com/feed/"),
@@ -39,15 +38,15 @@ RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
     "crypto": [
         ("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"),
         ("CoinTelegraph", "https://cointelegraph.com/rss"),
-        ("The Block", "https://www.theblock.co/rss.xml"),
+        ("Decrypt", "https://decrypt.co/feed"),
     ],
     "finance": [
-        ("Reuters Business", "https://feeds.reuters.com/reuters/businessNews"),
+        ("Guardian Business", "https://www.theguardian.com/business/rss"),
         ("MarketWatch", "https://feeds.marketwatch.com/marketwatch/topstories/"),
         ("CNBC", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"),
     ],
     "science": [
-        ("Reuters Tech", "https://feeds.reuters.com/reuters/technologyNews"),
+        ("Guardian Tech", "https://www.theguardian.com/technology/rss"),
         ("Ars Technica", "https://feeds.arstechnica.com/arstechnica/index"),
         ("TechCrunch", "https://techcrunch.com/feed/"),
     ],
@@ -58,7 +57,6 @@ RSS_FEEDS: dict[str, list[tuple[str, str]]] = {
         ("Politico Defense", "https://rss.politico.com/defense.xml"),
         ("The Intercept", "https://theintercept.com/feed/?rss"),
         ("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
-        ("Reuters World", "https://feeds.reuters.com/Reuters/worldNews"),
         # Telegram — geopolitics & conflict aggregators
         ("DD Geopolitics", "tg://DDGeopolitics"),
         ("Geopolitics Watch", "tg://GeoPWatch"),
