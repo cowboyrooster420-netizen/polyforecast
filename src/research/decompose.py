@@ -10,14 +10,17 @@ logger = logging.getLogger(__name__)
 
 DECOMPOSITION_SYSTEM_PROMPT = """\
 You break a prediction-market question into specific, independently answerable
-research sub-questions that would help someone estimate the probability of the
-outcome from first principles.
+research sub-questions that would help someone estimate how the market will
+resolve, from first principles.
 
 Produce 2-4 sub-questions. Aim for a mix of:
 - REFERENCE-CLASS questions: "how often do things of this sort happen?" — these
   let us look up base rates from analogous past situations.
 - CURRENT-STATE questions: concrete, datable facts about the present situation
   that would move the estimate.
+- RESOLUTION questions (only when the wording is non-trivial or ambiguous): how
+  similar markets or criteria have resolved before, or what exactly the
+  resolution source tracks — to surface edge-resolution or ambiguity risk.
 
 Rules:
 - Each sub-question must be specific and searchable on its own (a web search or
