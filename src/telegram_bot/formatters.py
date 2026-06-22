@@ -31,7 +31,7 @@ def format_market_list(markets: list[Market]) -> str:
     lines: list[str] = []
     for i, m in enumerate(markets, 1):
         prices = " / ".join(
-            f"{t.outcome}: {t.price:.0%}" for t in m.tokens if t.price > 0
+            f"{_escape(t.outcome)}: {t.price:.0%}" for t in m.tokens if t.price > 0
         )
         vol = f"${m.volume:,.0f}" if m.volume else "n/a"
         lines.append(
@@ -63,15 +63,18 @@ def format_forecast(result: ForecastResult) -> str:
     lines.append(f"{'Outcome':<{col_w}} {'Bot':>7} {'Market':>7} {'Edge':>7}")
     lines.append("-" * (col_w + 23))
     for of in result.outcomes:
-        name = of.outcome[:col_w]
+        # Escape the name (outcomes like "<52m"/">70m" contain HTML-special chars)
+        # but pad by visible width so the column still lines up inside <pre>.
+        raw = of.outcome[:col_w]
+        name = _escape(raw) + " " * max(0, col_w - len(raw))
         if not of.has_market_price:
             lines.append(
-                f"{name:<{col_w}} {of.bot_probability:>6.1%} {'n/a':>7} {'n/a':>7}"
+                f"{name} {of.bot_probability:>6.1%} {'n/a':>7} {'n/a':>7}"
             )
             continue
         edge = of.bot_probability - of.market_probability
         lines.append(
-            f"{name:<{col_w}} {of.bot_probability:>6.1%} {of.market_probability:>6.1%} {edge:>+6.1%}"
+            f"{name} {of.bot_probability:>6.1%} {of.market_probability:>6.1%} {edge:>+6.1%}"
         )
     lines.append("</pre>")
 
@@ -144,7 +147,7 @@ def format_portfolio(
             resolved_str = "Resolved" if p["resolved"] else "Open"
             lines.append(
                 f"\n  {_escape(p['market_question'][:60])}\n"
-                f"    {p['outcome']}: bot {p['bot_probability']:.0%} vs market {p['market_probability']:.0%}\n"
+                f"    {_escape(p['outcome'])}: bot {p['bot_probability']:.0%} vs market {p['market_probability']:.0%}\n"
                 f"    Rec: {p['recommendation']} | {resolved_str}"
             )
             if len(seen_conditions) >= 10:

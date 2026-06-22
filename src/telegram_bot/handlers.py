@@ -401,7 +401,13 @@ async def _send_long_message(
     if not update.message:
         return
     if len(text) <= max_len:
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        try:
+            await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+        except Exception:
+            # Bad HTML (e.g. an unescaped char) must never swallow the result —
+            # fall back to plain text so the forecast is always delivered.
+            logger.warning("HTML send failed; retrying as plain text", exc_info=True)
+            await update.message.reply_text(text)
         return
 
     # Split on double newlines or force-split
