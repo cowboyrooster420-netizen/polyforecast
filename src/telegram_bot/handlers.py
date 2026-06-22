@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -22,6 +23,10 @@ if TYPE_CHECKING:
     from src.telegram_bot.bot import BotApp
 
 logger = logging.getLogger(__name__)
+
+# Hard ceiling on a single analysis so the handler always replies, even if the
+# pipeline hangs or Anthropic stays overloaded through every retry.
+ANALYSIS_TIMEOUT_SECONDS = 240
 
 
 def _infer_winning_outcome(market: Market) -> str | None:
@@ -158,8 +163,11 @@ async def analyze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await update.message.reply_text("Could not find that market.")
             return
 
-        # Run analysis
-        result = await app.engine.analyze_market(market)
+        # Run analysis with a hard ceiling so a hang or retry storm never
+        # leaves the user with the "Analyzing..." message and no reply.
+        result = await asyncio.wait_for(
+            app.engine.analyze_market(market), timeout=ANALYSIS_TIMEOUT_SECONDS
+        )
 
         # Save prediction + snapshot (include the articles that informed it)
         await app.repo.save_prediction(
@@ -169,6 +177,12 @@ async def analyze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await app.repo.touch_user(user_id)
 
         text = format_forecast(result)
+    except asyncio.TimeoutError:
+        logger.error("Analysis timed out after %ss for: %s", ANALYSIS_TIMEOUT_SECONDS, ref)
+        await update.message.reply_text(
+            "Analysis timed out — Claude may be overloaded. Please try /analyze again in a minute."
+        )
+        return
     except (anthropic.OverloadedError, anthropic.RateLimitError, anthropic.InternalServerError):
         logger.warning("Anthropic temporarily unavailable during analysis", exc_info=True)
         await update.message.reply_text(
