@@ -72,9 +72,8 @@ def format_forecast(result: ForecastResult) -> str:
                 f"{name} {of.bot_probability:>6.1%} {'n/a':>7} {'n/a':>7}"
             )
             continue
-        edge = of.bot_probability - of.market_probability
         lines.append(
-            f"{name} {of.bot_probability:>6.1%} {of.market_probability:>6.1%} {edge:>+6.1%}"
+            f"{name} {of.bot_probability:>6.1%} {of.market_probability:>6.1%} {of.edge:>+6.1%}"
         )
     lines.append("</pre>")
 
@@ -85,17 +84,19 @@ def format_forecast(result: ForecastResult) -> str:
         rec_tag = _REC_EMOJI.get(of.recommendation, "")
         lines.append(
             f"  <b>{_escape(of.outcome)}</b>: {of.recommendation.value} {rec_tag}\n"
-            f"    EV per dollar: {of.ev_per_dollar:+.2%}\n"
+            f"    Edge: {of.edge:+.1%}\n"
+            f"    EV per dollar: {of.ev_per_dollar:+.1%}\n"
             f"    Kelly fraction: {of.kelly_fraction:.1%}"
         )
     if not priced:
         lines.append("  No market prices available — EV cannot be computed.")
 
     best = result.best_opportunity
-    if best and best.ev_per_dollar > 0:
+    if best and best.edge > 0:
         lines.append(
             f"\n<b>Best opportunity: {_escape(best.outcome)}</b> "
-            f"(EV {best.ev_per_dollar:+.2%}, Kelly {best.kelly_fraction:.1%})"
+            f"(Edge {best.edge:+.1%}, EV {best.ev_per_dollar:+.1%}, "
+            f"Kelly {best.kelly_fraction:.1%})"
         )
     else:
         lines.append("\nNo +EV opportunity found — market appears fairly priced.")

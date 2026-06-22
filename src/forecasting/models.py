@@ -104,10 +104,19 @@ class OutcomeForecast(BaseModel):
     outcome: str
     bot_probability: float
     market_probability: float
-    ev_per_dollar: float
+    ev_per_dollar: float  # expected profit per $1 staked: (bot - market) / market
     kelly_fraction: float
     recommendation: Recommendation
     has_market_price: bool = True
+
+    @property
+    def edge(self) -> float:
+        """Probability edge = bot_probability - market_probability.
+
+        Drives recommendation/ranking. Distinct from ev_per_dollar, which is
+        scaled by the entry price and so inflates for cheap longshots.
+        """
+        return self.bot_probability - self.market_probability
 
 
 class ForecastResult(BaseModel):
@@ -125,8 +134,15 @@ class ForecastResult(BaseModel):
 
     @property
     def best_opportunity(self) -> OutcomeForecast | None:
-        """Return the outcome with the highest positive EV, if any."""
-        positive = [o for o in self.outcomes if o.ev_per_dollar > 0]
+        """Return the outcome with the largest positive probability edge, if any.
+
+        Ranked by edge rather than ev_per_dollar so we don't preferentially
+        surface cheap longshots whose per-dollar EV is large but whose
+        probability advantage (and tradeable size) is thin.
+        """
+        positive = [
+            o for o in self.outcomes if o.has_market_price and o.edge > 0
+        ]
         if not positive:
             return None
-        return max(positive, key=lambda o: o.ev_per_dollar)
+        return max(positive, key=lambda o: o.edge)
