@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from src.forecasting.ev_calculator import MIN_TRADABLE_PRICE
 from src.forecasting.models import ForecastResult, Recommendation
 from src.polymarket.models import Market
 
@@ -82,10 +83,19 @@ def format_forecast(result: ForecastResult) -> str:
     priced = [of for of in result.outcomes if of.has_market_price]
     for of in priced:
         rec_tag = _REC_EMOJI.get(of.recommendation, "")
+        # On sub-floor (penny) markets EV-per-dollar is a denominator artifact —
+        # show why it's untradable instead of a mirage greenlight number.
+        if of.market_probability < MIN_TRADABLE_PRICE:
+            ev_line = (
+                f"    EV per dollar: n/a "
+                f"(price {of.market_probability:.1%} below {MIN_TRADABLE_PRICE:.0%} floor — too thin to trade)"
+            )
+        else:
+            ev_line = f"    EV per dollar: {of.ev_per_dollar:+.1%}"
         lines.append(
             f"  <b>{_escape(of.outcome)}</b>: {of.recommendation.value} {rec_tag}\n"
             f"    Edge: {of.edge:+.1%}\n"
-            f"    EV per dollar: {of.ev_per_dollar:+.1%}\n"
+            f"{ev_line}\n"
             f"    Kelly fraction: {of.kelly_fraction:.1%}"
         )
     if not priced:

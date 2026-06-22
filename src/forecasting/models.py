@@ -134,15 +134,18 @@ class ForecastResult(BaseModel):
 
     @property
     def best_opportunity(self) -> OutcomeForecast | None:
-        """Return the outcome with the largest positive probability edge, if any.
+        """Return the largest-edge *actionable* outcome, if any.
 
-        Ranked by edge rather than ev_per_dollar so we don't preferentially
-        surface cheap longshots whose per-dollar EV is large but whose
-        probability advantage (and tradeable size) is thin.
+        Restricted to BUY/STRONG_BUY so a penny longshot (gated to AVOID by the
+        price floor) or a marginal HOLD is never surfaced as the headline pick.
+        Ranked by edge, not ev_per_dollar, so cheap longshots with a large
+        per-dollar EV but thin probability advantage don't win.
         """
-        positive = [
-            o for o in self.outcomes if o.has_market_price and o.edge > 0
+        actionable = [
+            o
+            for o in self.outcomes
+            if o.recommendation in (Recommendation.BUY, Recommendation.STRONG_BUY)
         ]
-        if not positive:
+        if not actionable:
             return None
-        return max(positive, key=lambda o: o.edge)
+        return max(actionable, key=lambda o: o.edge)
