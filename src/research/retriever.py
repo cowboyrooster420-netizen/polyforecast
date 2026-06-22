@@ -38,7 +38,10 @@ class ResearchRetriever:
             timeout=30.0,
             headers={"User-Agent": "Polyforecast-Research/1.0"},
         )
-        self._anthropic = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._anthropic = anthropic.AsyncAnthropic(
+            api_key=settings.anthropic_api_key,
+            max_retries=settings.anthropic_max_retries,
+        )
         self._exa = ExaClient(
             settings, self._http, AsyncTokenBucket(settings.exa_rpm / 60.0)
         )

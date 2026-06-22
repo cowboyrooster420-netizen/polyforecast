@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+import anthropic
 from telegram import Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
@@ -148,7 +149,7 @@ async def analyze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     ref = " ".join(context.args).strip()
     await update.message.chat.send_action(ChatAction.TYPING)
-    await update.message.reply_text("Analyzing... this may take 30-60 seconds.")
+    await update.message.reply_text("Analyzing... this may take up to a minute or two.")
 
     try:
         # Resolve market first
@@ -168,6 +169,12 @@ async def analyze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await app.repo.touch_user(user_id)
 
         text = format_forecast(result)
+    except (anthropic.OverloadedError, anthropic.RateLimitError, anthropic.InternalServerError):
+        logger.warning("Anthropic temporarily unavailable during analysis", exc_info=True)
+        await update.message.reply_text(
+            "Claude is temporarily overloaded. Please try /analyze again in a minute."
+        )
+        return
     except Exception as exc:
         logger.error("Analysis failed: %s", exc, exc_info=True)
         await update.message.reply_text(f"Analysis failed: {exc}")

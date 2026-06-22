@@ -93,7 +93,10 @@ class ForecastingEngine:
         self._polymarket = polymarket
         self._news = news
         self._research = research
-        self._anthropic = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._anthropic = anthropic.AsyncAnthropic(
+            api_key=settings.anthropic_api_key,
+            max_retries=settings.anthropic_max_retries,
+        )
         self._rate_limiter = AsyncTokenBucket(settings.anthropic_rpm / 60.0)
 
     async def _gather_context(

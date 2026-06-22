@@ -73,6 +73,9 @@ class Settings:
 
     # Rate limits
     anthropic_rpm: int = 30
+    # SDK auto-retries 429/529/5xx with exponential backoff; bump above the
+    # default of 2 so transient Anthropic overload doesn't fail a whole analysis.
+    anthropic_max_retries: int = 5
     newsapi_rpm: int = 100
     exa_rpm: int = 60
     brave_rpm: int = 60
