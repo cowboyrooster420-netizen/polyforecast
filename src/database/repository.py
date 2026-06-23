@@ -160,6 +160,82 @@ class Repository:
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
+    # ── Price-move monitor ───────────────────────────────────
+
+    async def get_recent_prices(self, since_iso: str) -> list[dict[str, Any]]:
+        """All market snapshots captured at or after `since_iso` (the window)."""
+        cursor = await self._conn.execute(
+            """SELECT condition_id, outcome, price, captured_at
+               FROM market_snapshots
+               WHERE captured_at >= ?
+               ORDER BY captured_at ASC""",
+            (since_iso,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def was_triggered_since(self, condition_id: str, since_iso: str) -> bool:
+        """True if this market already produced a fade candidate in the cooldown."""
+        cursor = await self._conn.execute(
+            """SELECT 1 FROM fade_candidates
+               WHERE condition_id = ? AND detected_at >= ? LIMIT 1""",
+            (condition_id, since_iso),
+        )
+        return (await cursor.fetchone()) is not None
+
+    async def count_fade_candidates_since(self, since_iso: str) -> int:
+        """How many auto-forecasts the monitor has logged since `since_iso`."""
+        cursor = await self._conn.execute(
+            "SELECT COUNT(*) AS cnt FROM fade_candidates WHERE detected_at >= ?",
+            (since_iso,),
+        )
+        row = await cursor.fetchone()
+        return row["cnt"] if row else 0
+
+    async def save_fade_candidate(self, payload: dict[str, Any]) -> int:
+        cursor = await self._conn.execute(
+            """INSERT INTO fade_candidates
+               (condition_id, market_question, market_slug, category, moved_outcome,
+                ref_price, new_price, price_move, bot_probability, edge,
+                is_fade, fade_outcome, fade_recommendation, fade_edge,
+                confidence, reasoning_text)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                payload["condition_id"],
+                payload.get("market_question", ""),
+                payload.get("market_slug", ""),
+                payload.get("category", ""),
+                payload["moved_outcome"],
+                payload["ref_price"],
+                payload["new_price"],
+                payload["price_move"],
+                payload.get("bot_probability"),
+                payload.get("edge"),
+                1 if payload.get("is_fade") else 0,
+                payload.get("fade_outcome"),
+                payload.get("fade_recommendation"),
+                payload.get("fade_edge"),
+                payload.get("confidence", 0.0),
+                payload.get("reasoning_text", ""),
+            ),
+        )
+        await self._conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    async def get_recent_fade_candidates(self, limit: int = 15) -> list[dict[str, Any]]:
+        cursor = await self._conn.execute(
+            """SELECT detected_at, market_question, category, moved_outcome,
+                      ref_price, new_price, price_move, bot_probability, edge,
+                      is_fade, fade_outcome, fade_recommendation, fade_edge,
+                      resolved, actual_outcome
+               FROM fade_candidates
+               ORDER BY detected_at DESC
+               LIMIT ?""",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
     # ── Calibration / stats ──────────────────────────────────
 
     async def get_brier_score(self, telegram_user_id: int | None = None) -> float | None:

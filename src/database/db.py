@@ -48,6 +48,31 @@ CREATE TABLE IF NOT EXISTS news_articles (
     description TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS fade_candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    condition_id TEXT NOT NULL,
+    market_question TEXT NOT NULL DEFAULT '',
+    market_slug TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT '',   -- for slicing fade WR by market type
+    moved_outcome TEXT NOT NULL,
+    ref_price REAL NOT NULL,          -- price at the start of the window
+    new_price REAL NOT NULL,          -- price now (post-move)
+    price_move REAL NOT NULL,         -- new_price - ref_price
+    bot_probability REAL,             -- blind fair value for the moved outcome
+    edge REAL,                        -- bot_probability - new_price (negative => overpriced => fade)
+    is_fade INTEGER NOT NULL DEFAULT 0,   -- moved outcome looks overpriced vs fair value
+    fade_outcome TEXT,                -- the cheap side we'd buy instead
+    fade_recommendation TEXT,         -- recommendation on that cheap side
+    fade_edge REAL,                   -- edge on the cheap side
+    confidence REAL NOT NULL DEFAULT 0.0,
+    reasoning_text TEXT NOT NULL DEFAULT '',
+    -- paper outcome (filled when the market resolves)
+    resolved INTEGER NOT NULL DEFAULT 0,
+    actual_outcome TEXT,
+    resolution_date TEXT
+);
+
 CREATE TABLE IF NOT EXISTS calibration_cache (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     computed_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -70,6 +95,9 @@ CREATE TABLE IF NOT EXISTS user_state (
 CREATE INDEX IF NOT EXISTS idx_predictions_condition ON predictions(condition_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(telegram_user_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_condition ON market_snapshots(condition_id);
+CREATE INDEX IF NOT EXISTS idx_snapshots_captured ON market_snapshots(captured_at);
+CREATE INDEX IF NOT EXISTS idx_fade_detected ON fade_candidates(detected_at);
+CREATE INDEX IF NOT EXISTS idx_fade_condition ON fade_candidates(condition_id);
 """
 
 

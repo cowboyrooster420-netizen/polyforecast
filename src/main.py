@@ -9,6 +9,7 @@ from src.config import Settings
 from src.database.db import init_db
 from src.database.repository import Repository
 from src.forecasting.engine import ForecastingEngine
+from src.monitor.price_monitor import PriceMonitor
 from src.news.client import NewsClient
 from src.polymarket.client import PolymarketClient
 from src.research.retriever import ResearchRetriever
@@ -59,6 +60,32 @@ async def _run() -> None:
     await application.updater.start_polling()
     logger.info("Bot is live. Polling for updates...")
 
+    # Optional background price-move monitor (overreaction-fade watcher).
+    monitor_task: asyncio.Task | None = None
+    if settings.monitor_enabled:
+        from telegram.constants import ParseMode
+
+        alert_chat = settings.monitor_alert_chat_id or (
+            settings.telegram_authorized_users[0]
+            if settings.telegram_authorized_users
+            else None
+        )
+
+        async def _alert(text: str) -> None:
+            if alert_chat is None:
+                return
+            await application.bot.send_message(
+                chat_id=alert_chat, text=text, parse_mode=ParseMode.HTML
+            )
+
+        monitor = PriceMonitor(
+            settings, polymarket, engine, repo, alert=_alert if alert_chat else None
+        )
+        monitor_task = asyncio.create_task(monitor.run_forever())
+        logger.info("Price monitor enabled (alert chat: %s).", alert_chat)
+    else:
+        logger.info("Price monitor disabled (set MONITOR_ENABLED=true to enable).")
+
     # Run until interrupted
     stop_event = asyncio.Event()
 
@@ -76,6 +103,12 @@ async def _run() -> None:
 
     # Graceful shutdown
     logger.info("Shutting down...")
+    if monitor_task is not None:
+        monitor_task.cancel()
+        try:
+            await monitor_task
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+            pass
     try:
         if application.updater and application.updater.running:
             await application.updater.stop()

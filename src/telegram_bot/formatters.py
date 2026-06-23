@@ -235,6 +235,44 @@ def format_news_articles(articles: list[dict[str, str]]) -> str:
     return "\n\n".join(lines)
 
 
+def format_movers(rows: list[dict[str, Any]]) -> str:
+    """Render recent price-move / fade candidates from the monitor."""
+    if not rows:
+        return (
+            "No price-move triggers logged yet.\n"
+            "The monitor logs sharp moves and the bot's blind read on each."
+        )
+    lines = ["<b>RECENT PRICE MOVES (paper / observation)</b>\n"]
+    for r in rows:
+        when = str(r.get("detected_at", ""))[:16]
+        q = _escape(str(r.get("market_question", ""))[:70])
+        moved = _escape(str(r.get("moved_outcome", "")))
+        ref = r.get("ref_price") or 0.0
+        new = r.get("new_price") or 0.0
+        move = r.get("price_move") or 0.0
+        arrow = "▲" if move > 0 else "▼"
+        botp = r.get("bot_probability")
+        cat = str(r.get("category", "") or "")
+        tag = f" [{cat}]" if cat else ""
+        line = [
+            f"<b>{q}</b>{tag}",
+            f"  {arrow} {moved}: {ref:.0%} → {new:.0%} ({move:+.0%})  <i>{when}</i>",
+        ]
+        if botp is not None:
+            verdict = "overpriced → fade" if botp < new else "fair value moved"
+            line.append(f"  blind fair value {botp:.0%} ({verdict})")
+        if r.get("is_fade") and r.get("fade_outcome"):
+            fe = r.get("fade_edge") or 0.0
+            line.append(
+                f"  → buy <b>{_escape(str(r['fade_outcome']))}</b> "
+                f"{r.get('fade_recommendation', '')} (edge {fe:+.0%})"
+            )
+        if r.get("resolved"):
+            line.append(f"  resolved: {_escape(str(r.get('actual_outcome', '?')))}")
+        lines.append("\n".join(line))
+    return "\n\n".join(lines)
+
+
 def _escape(text: str) -> str:
     """Escape HTML special chars for Telegram."""
     return (

@@ -14,6 +14,7 @@ from src.telegram_bot.formatters import (
     format_calibration_table,
     format_forecast,
     format_market_list,
+    format_movers,
     format_news_articles,
     format_portfolio,
     generate_calibration_chart,
@@ -99,6 +100,9 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "  View your tracked predictions and accuracy stats\n\n"
         "<b>/calibration</b>\n"
         "  Show calibration table and chart for resolved predictions\n\n"
+        "<b>/movers</b>\n"
+        "  Recent sharp price moves the monitor caught, with the bot's blind read "
+        "and any fade candidate (paper/observation only)\n\n"
         "<b>/news</b> &lt;topic&gt;\n"
         "  Search for recent news on a topic\n\n"
         "<b>/resolve</b> [slug] [outcome]\n"
@@ -247,6 +251,15 @@ async def portfolio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     }
     text = format_portfolio(predictions, stats)
     await _send_long_message(update, text)
+
+
+async def movers_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message or not _authorized(update, context):
+        return
+    app = _get_app(context)
+    await update.message.chat.send_action(ChatAction.TYPING)
+    rows = await app.repo.get_recent_fade_candidates(limit=15)
+    await _send_long_message(update, format_movers(rows))
 
 
 async def calibration_handler(

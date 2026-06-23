@@ -85,6 +85,29 @@ class Settings:
         default_factory=lambda: ["science", "crypto", "politics"]
     )
 
+    # ── Price-move monitor (overreaction-fade watcher) ───────────────────────
+    # Polls a universe of markets for sharp price moves, then runs the BLIND
+    # forecaster against the movers to see whether fair value actually changed
+    # or the move was FOMO. Observation-only: it logs + notifies, never trades.
+    monitor_enabled: bool = False
+    monitor_poll_minutes: int = 10  # how often to snapshot prices
+    monitor_window_hours: float = 6.0  # rolling window a "move" is measured over
+    monitor_move_threshold: float = 0.15  # min absolute price move to trigger (15pp)
+    monitor_max_forecasts_per_cycle: int = 2  # cost guard: only the N biggest movers
+    monitor_daily_forecast_cap: int = 12  # cost guard: hard ceiling on auto-forecasts/day
+    monitor_cooldown_hours: float = 12.0  # don't re-trigger same market within this window
+    monitor_universe_limit: int = 80  # how many markets to watch
+    # Fade detection wants attention/volume (where overreactions happen), so by
+    # default we watch the top markets by volume across ALL categories. Polling
+    # is free; the daily forecast cap — not the universe size — governs spend.
+    # Set monitor_broad_mode=False to instead watch only the fit-tag topics.
+    monitor_broad_mode: bool = True
+    monitor_universe_tags: list[str] = field(
+        default_factory=lambda: ["box-office", "movies", "film", "economy", "awards"]
+    )
+    # Telegram chat to push trigger alerts to (defaults to first authorized user).
+    monitor_alert_chat_id: int | None = None
+
     @classmethod
     def from_env(cls) -> Settings:
         auth_users_raw = os.environ.get("TELEGRAM_AUTHORIZED_USERS", "")
@@ -98,8 +121,23 @@ class Settings:
             "0",
             "no",
         )
+        monitor_enabled = os.environ.get("MONITOR_ENABLED", "false").strip().lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+        alert_chat_raw = os.environ.get("MONITOR_ALERT_CHAT_ID", "").strip()
+        alert_chat = int(alert_chat_raw) if alert_chat_raw.lstrip("-").isdigit() else None
+        broad_mode = os.environ.get("MONITOR_BROAD_MODE", "true").strip().lower() not in (
+            "false",
+            "0",
+            "no",
+        )
         return cls(
             use_research_retrieval=use_research,
+            monitor_enabled=monitor_enabled,
+            monitor_broad_mode=broad_mode,
+            monitor_alert_chat_id=alert_chat,
             anthropic_api_key=os.environ["ANTHROPIC_API_KEY"],
             newsapi_key=os.environ.get("NEWSAPI_KEY", ""),
             guardian_api_key=os.environ.get("GUARDIAN_API_KEY", ""),
