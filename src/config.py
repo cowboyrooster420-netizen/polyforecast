@@ -105,6 +105,13 @@ class Settings:
     monitor_universe_tags: list[str] = field(
         default_factory=lambda: ["box-office", "movies", "film", "economy", "awards"]
     )
+    # In broad mode, drop these categories from the watched universe. Crypto-price
+    # markets track an external price (no overreaction to fade); sports move on
+    # real in-game info and resolve too fast. Both dominate raw volume but are
+    # poor fade targets, so we exclude them by default.
+    monitor_exclude_categories: list[str] = field(
+        default_factory=lambda: ["crypto", "sports"]
+    )
     # Telegram chat to push trigger alerts to (defaults to first authorized user).
     monitor_alert_chat_id: int | None = None
 
@@ -133,10 +140,17 @@ class Settings:
             "0",
             "no",
         )
+        exclude_raw = os.environ.get("MONITOR_EXCLUDE_CATEGORIES", "").strip()
+        exclude_cats = (
+            [c.strip().lower() for c in exclude_raw.split(",") if c.strip()]
+            if exclude_raw
+            else ["crypto", "sports"]
+        )
         return cls(
             use_research_retrieval=use_research,
             monitor_enabled=monitor_enabled,
             monitor_broad_mode=broad_mode,
+            monitor_exclude_categories=exclude_cats,
             monitor_alert_chat_id=alert_chat,
             anthropic_api_key=os.environ["ANTHROPIC_API_KEY"],
             newsapi_key=os.environ.get("NEWSAPI_KEY", ""),

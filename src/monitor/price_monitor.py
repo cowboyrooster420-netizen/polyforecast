@@ -137,15 +137,28 @@ class PriceMonitor:
             return
         found: dict[str, Market] = {}
         if self.settings.monitor_broad_mode:
-            # Broad: top markets by volume across ALL categories — where the
-            # attention, liquidity, and overreactions live. Polling is free; the
-            # daily forecast cap governs spend, not the universe size.
+            # Broad-minus-noise: top markets by volume across all categories
+            # (where attention/liquidity/overreaction live), but drop the
+            # categories that are poor fade targets (crypto-price tracks an
+            # external price; sports move on real in-game info). Polling is free;
+            # the daily forecast cap governs spend, not the universe size.
+            exclude = {c.lower() for c in self.settings.monitor_exclude_categories}
             try:
                 markets = await self.polymarket.get_active_markets(
                     limit=self.settings.monitor_universe_limit, category=None
                 )
+                dropped = 0
                 for m in markets:
+                    if classify_category(m.question) in exclude:
+                        dropped += 1
+                        continue
                     found[m.condition_id] = m
+                if exclude:
+                    logger.info(
+                        "monitor: broad universe dropped %d markets in %s",
+                        dropped,
+                        sorted(exclude),
+                    )
             except Exception as exc:
                 logger.warning("monitor: broad universe fetch failed: %s", exc)
         else:
