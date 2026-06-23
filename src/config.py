@@ -93,6 +93,14 @@ class Settings:
     monitor_poll_minutes: int = 10  # how often to snapshot prices
     monitor_window_hours: float = 6.0  # rolling window a "move" is measured over
     monitor_move_threshold: float = 0.15  # min absolute price move to trigger (15pp)
+    # Relative trigger for tail-event overreactions: a low-probability outcome
+    # (ref <= relative_max_ref) that spikes UP by >= relative_multiple× to a
+    # tradable price. Catches "regime collapses by <date>" jumping 4%→16% — only
+    # +12pp absolute (below threshold) but 4× relative — the salience-driven
+    # spike that's the bot's best fade. Set relative_multiple very high to disable.
+    monitor_relative_multiple: float = 1.8
+    monitor_relative_max_ref: float = 0.25
+    monitor_relative_min_price: float = 0.08
     monitor_max_forecasts_per_cycle: int = 2  # cost guard: only the N biggest movers
     monitor_daily_forecast_cap: int = 12  # cost guard: hard ceiling on auto-forecasts/day
     monitor_cooldown_hours: float = 12.0  # don't re-trigger same market within this window

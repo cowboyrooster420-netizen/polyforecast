@@ -93,7 +93,13 @@ class PriceMonitor:
 
         since = (_now() - timedelta(hours=self.settings.monitor_window_hours)).isoformat()
         rows = await self.repo.get_recent_prices(since)
-        moves = detect_moves(rows, self.settings.monitor_move_threshold)
+        moves = detect_moves(
+            rows,
+            self.settings.monitor_move_threshold,
+            relative_multiple=self.settings.monitor_relative_multiple,
+            relative_max_ref=self.settings.monitor_relative_max_ref,
+            relative_min_price=self.settings.monitor_relative_min_price,
+        )
         if not moves:
             return
         logger.info("monitor: %d market(s) moved ≥ threshold", len(moves))

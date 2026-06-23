@@ -25,6 +25,9 @@ def detect_moves(
     threshold: float,
     min_price: float = 0.05,
     max_price: float = 0.97,
+    relative_multiple: float = 1.8,
+    relative_max_ref: float = 0.25,
+    relative_min_price: float = 0.08,
 ) -> list[MoveEvent]:
     """Find sharp price moves, one (the largest) per market.
 
@@ -34,10 +37,18 @@ def detect_moves(
     function only needs them grouped, not time-filtered.
 
     For each (market, outcome) we compare the earliest and latest price in the
-    window. A move qualifies when its magnitude clears `threshold` AND the new
-    price sits in a tradable band (so we ignore already-resolved 0/1 rails and
-    penny rails where the fade is unfillable). We then keep only the single
-    largest-magnitude outcome per market — its headline move.
+    window. A move qualifies, and the new price must sit in a tradable band
+    (ignoring resolved 0/1 rails and penny rails), when EITHER:
+
+    - **Absolute**: |move| >= `threshold` (mid-range overreactions), OR
+    - **Relative**: a low-probability outcome (ref <= `relative_max_ref`) spiked
+      UP by at least `relative_multiple`× to >= `relative_min_price`. This is the
+      tail-event case — a "regime collapses by <date>" market jumping 4%→16% is
+      only +12pp absolute but 4× relative, and is exactly the salience-driven
+      overreaction we want to fade. A pure absolute threshold would miss it.
+
+    We keep the single largest-magnitude outcome per market (preferring the
+    upward spike on ties) — its headline move.
     """
     # Group rows by (condition_id, outcome), preserving chronological order.
     series: dict[tuple[str, str], list[tuple[str, float]]] = defaultdict(list)
@@ -60,10 +71,19 @@ def detect_moves(
         ref_price = points[0][1]
         new_price = points[-1][1]
         move = new_price - ref_price
-        if abs(move) < threshold:
+
+        absolute_hit = abs(move) >= threshold
+        relative_hit = (
+            move > 0
+            and 0 < ref_price <= relative_max_ref
+            and new_price >= relative_min_price
+            and new_price >= ref_price * relative_multiple
+        )
+        if not (absolute_hit or relative_hit):
             continue
         if not (min_price <= new_price <= max_price):
             continue
+
         event = MoveEvent(
             condition_id=cid,
             outcome=outcome,
@@ -72,7 +92,13 @@ def detect_moves(
             move=move,
         )
         current = best_per_market.get(cid)
-        if current is None or event.magnitude > current.magnitude:
+        # Largest magnitude wins; on a tie prefer the upward spike (clearer to
+        # read as "this outcome got bid up"), since binary YES/NO moves tie.
+        if (
+            current is None
+            or event.magnitude > current.magnitude
+            or (event.magnitude == current.magnitude and event.move > current.move)
+        ):
             best_per_market[cid] = event
 
     # Biggest movers first.
