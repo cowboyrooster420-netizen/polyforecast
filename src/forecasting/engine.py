@@ -16,6 +16,7 @@ from src.forecasting.models import (
     OutcomeForecast,
 )
 from src.forecasting.prompts import PROMPT_VERSION, SYSTEM_PROMPT, build_user_prompt
+from src.forecasting.validators import validate_forecast
 from src.news.client import NewsClient
 from src.news.models import Article
 from src.polymarket.client import PolymarketClient
@@ -209,7 +210,7 @@ class ForecastingEngine:
             )
             outcome_forecasts.append(of)
 
-        return ForecastResult(
+        result = ForecastResult(
             condition_id=market.condition_id,
             question=market.question,
             slug=market.slug,
@@ -222,6 +223,19 @@ class ForecastingEngine:
             news_article_count=len(articles),
             articles=articles,
         )
+
+        # 6. Pre-commit validation: hard logic assertions raise (a bad forecast
+        #    must never reach the user); soft gates flag for manual review and
+        #    downgrade confidence on staleness.
+        report = validate_forecast(result, market)
+        if report.downgrade_confidence and result.confidence_label != "Low":
+            logger.warning("Forecast downgraded to Low confidence (staleness gate).")
+            result.confidence = 0.33
+            result.confidence_label = "Low"
+        result.flags = report.flags
+        for flag in report.flags:
+            logger.info("Forecast flag: %s", flag)
+        return result
 
     async def analyze_by_ref(self, ref: str) -> ForecastResult | None:
         """Convenience: resolve a URL/slug/condition_id and analyze."""

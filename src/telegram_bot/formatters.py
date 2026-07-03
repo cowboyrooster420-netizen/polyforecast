@@ -53,6 +53,13 @@ def format_forecast(result: ForecastResult) -> str:
     if result.slug:
         lines.append(f"https://polymarket.com/event/{result.slug}")
 
+    # ── Manual-review alarms (freshness / divergence) ──
+    if result.flags:
+        lines.append("")
+        lines.append("<b>⚠ REVIEW BEFORE SIZING</b>")
+        for flag in result.flags:
+            lines.append(_escape(flag))
+
     lines.append("")
 
     # ── Outcome comparison table ──

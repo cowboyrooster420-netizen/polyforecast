@@ -9,6 +9,7 @@ from telegram import Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 
+from src.forecasting.validators import ForecastValidationError
 from src.polymarket.models import Market
 from src.telegram_bot.formatters import (
     format_calibration_table,
@@ -191,6 +192,14 @@ async def analyze_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         logger.warning("Anthropic temporarily unavailable during analysis", exc_info=True)
         await update.message.reply_text(
             "Claude is temporarily overloaded. Please try /analyze again in a minute."
+        )
+        return
+    except ForecastValidationError as exc:
+        logger.error("Forecast failed validation for %s: %s", ref, exc)
+        await update.message.reply_text(
+            "⛔ Forecast failed a sanity check and was withheld "
+            f"(not logged):\n{exc}\n\nThis is a logic bug, not a market call — "
+            "please report it."
         )
         return
     except Exception as exc:

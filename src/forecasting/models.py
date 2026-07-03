@@ -131,6 +131,9 @@ class ForecastResult(BaseModel):
     prompt_version: str = ""
     news_article_count: int = 0
     articles: list[Article] = Field(default_factory=list)
+    # Soft validation flags (freshness, large divergence) — surfaced for manual
+    # review before sizing. Hard logic bugs raise instead of flagging.
+    flags: list[str] = Field(default_factory=list)
 
     @property
     def best_opportunity(self) -> OutcomeForecast | None:
